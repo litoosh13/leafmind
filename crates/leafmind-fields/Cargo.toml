@@ -1,0 +1,27 @@
+[package]
+name = "leafmind-fields"
+description = "Finds form fields (text boxes, checkboxes, signature areas) on a page image, on device."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+# JavaScript bindings for the browser (wasm-bindgen).
+wasm = ["dep:wasm-bindgen"]
+
+[dependencies]
+tract-onnx.workspace = true
+wasm-bindgen = { workspace = true, optional = true }
+
+# tract-onnx -> rand -> getrandom: in the browser getrandom needs its JavaScript backend
+# (the detector itself uses no randomness).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde_json = "1"

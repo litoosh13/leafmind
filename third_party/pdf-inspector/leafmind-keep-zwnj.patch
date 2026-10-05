@@ -1,0 +1,95 @@
+diff -ru a/src/lib.rs b/src/lib.rs
+--- a/src/lib.rs	2006-07-24 03:21:28
++++ b/src/lib.rs	2026-09-24 18:40:24
+@@ -853,7 +853,7 @@
+             markdown: if needs_ocr && !preserve_ocr_candidates {
+                 String::new()
+             } else {
+-                md
++                text_utils::strip_stray_joiners(&md)
+             },
+             needs_ocr,
+             ocr_reason,
+Only in b/src: lib.rs.orig
+diff -ru a/src/text_utils.rs b/src/text_utils.rs
+--- a/src/text_utils.rs	2006-07-24 03:21:28
++++ b/src/text_utils.rs	2026-09-24 18:40:24
+@@ -555,6 +555,36 @@
+         || lower.contains("kursiv") // German for italic
+ }
+ 
++/// Scripts whose spelling uses ZWNJ/ZWJ inside words (Arabic script incl. Persian/Urdu, Indic scripts).
++fn uses_joiners(c: char) -> bool {
++    matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}' | '\u{08A0}'..='\u{08FF}'
++        | '\u{FB50}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}' | '\u{0900}'..='\u{0DFF}')
++}
++
++/// A joiner between two letters where at least one belongs to such a script is part of the word.
++fn joiner_is_orthographic(chars: &[char], i: usize) -> bool {
++    let prev = chars[..i].iter().rev().find(|c| !matches!(c, '\u{200C}' | '\u{200D}'));
++    let next = chars[i + 1..].iter().find(|c| !matches!(c, '\u{200C}' | '\u{200D}'));
++    match (prev, next) {
++        (Some(&p), Some(&n)) => p.is_alphabetic() && n.is_alphabetic() && (uses_joiners(p) || uses_joiners(n)),
++        _ => false,
++    }
++}
++
++/// Remove ZWNJ/ZWJ that ended up anywhere other than inside a word of a script that uses them.
++pub(crate) fn strip_stray_joiners(text: &str) -> String {
++    if !text.contains(['\u{200C}', '\u{200D}']) {
++        return text.to_string();
++    }
++    let chars: Vec<char> = text.chars().collect();
++    chars
++        .iter()
++        .enumerate()
++        .filter(|&(i, c)| !matches!(c, '\u{200C}' | '\u{200D}') || joiner_is_orthographic(&chars, i))
++        .map(|(_, c)| *c)
++        .collect()
++}
++
+ /// Expand Unicode ligature characters to their component characters.
+ /// This makes extracted text more searchable and semantically correct.
+ /// Also strips control and invisible formatting characters and normalizes
+@@ -575,7 +605,17 @@
+     };
+ 
+     let mut result = String::with_capacity(text.len());
+-    for ch in text.chars() {
++    let chars: Vec<char> = text.chars().collect();
++    // A run made only of joiners (some producers emit ZWNJ as its own glyph run) is kept here; the
++    // assembled text is cleaned later with the same orthographic rule (see strip_stray_joiners).
++    if !chars.is_empty() && chars.iter().all(|c| matches!(c, '\u{200C}' | '\u{200D}')) {
++        return text.to_string();
++    }
++    for (i, &ch) in chars.iter().enumerate() {
++        if matches!(ch, '\u{200C}' | '\u{200D}') && joiner_is_orthographic(&chars, i) {
++            result.push(ch);
++            continue;
++        }
+         match ch {
+             // Explicit ligature expansion (also covers fonts whose ToUnicode
+             // maps to these code points directly)
+@@ -1615,6 +1655,21 @@
+     #[test]
+     fn strip_bom() {
+         assert_eq!(expand_ligatures("\u{FEFF}text"), "text");
++    }
++
++    #[test]
++    fn stray_joiners_are_removed_after_assembly() {
++        assert_eq!(strip_stray_joiners("# \u{200C} \u{0642}"), "#  \u{0642}");
++        assert_eq!(strip_stray_joiners("\u{0645}\u{06CC}\u{200C}\u{062F}"), "\u{0645}\u{06CC}\u{200C}\u{062F}");
++        assert_eq!(strip_stray_joiners("a\u{200C}b"), "ab");
++    }
++
++    #[test]
++    fn keep_joiners_inside_arabic_script_words() {
++        assert_eq!(expand_ligatures("\u{0645}\u{06CC}\u{200C}\u{0634}\u{0648}\u{062F}"), "\u{0645}\u{06CC}\u{200C}\u{0634}\u{0648}\u{062F}");
++        assert_eq!(expand_ligatures("\u{200C}\u{0634}"), "\u{0634}");
++        assert_eq!(expand_ligatures("\u{200C}"), "\u{200C}");
++        assert_eq!(expand_ligatures("\u{0634} \u{200C}"), "\u{0634} ");
+     }
+ 
+     #[test]
+Only in b/src: text_utils.rs.orig

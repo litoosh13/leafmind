@@ -1,0 +1,22 @@
+# Private working area: Claude instructions, notes, research, test sets. Never publish.
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# Question-answering models fetched by scripts/fetch-qa-models.sh (about 680 MB)
+/models/qa/
+# Tesseract language files fetched by scripts/fetch-tessdata.sh (about 50 MB)
+/models/tessdata/
+
+# Rust
+/target/
+**/*.rs.bk
+
+# WebAssembly output
+/pkg/
+**/pkg/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
