@@ -6,10 +6,12 @@
 
 use leafmind_fields::{Field, FieldFinder, FieldKind, Options, overlap};
 
-/// The reference run used the model card's values (threshold 0.3, overlap 0.6), not leafmind's default.
+/// The reference run used the model card's recipe (threshold 0.3, overlap 0.6, the whole page only), not
+/// leafmind's default.
 const CARD: Options = Options {
     min_score: 0.3,
     max_overlap: 0.6,
+    tiles: false,
 };
 
 fn root() -> &'static str {

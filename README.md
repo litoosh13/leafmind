@@ -12,12 +12,16 @@ It is in early development.
 
 - `crates/leafmind-fields` — finds form fields (text boxes, checkboxes/radio buttons, signature areas) on a
   page image with Nutrient's `form-field-v1-nano` detector (0.9 M parameters) run by
-  [tract](https://github.com/sonos/tract). About 50 ms per page natively and 100 ms in the browser
-  (WebAssembly with SIMD) on a recent laptop. Its default threshold (0.2, the model card says 0.3) keeps far
-  more fields on scans and filled forms: on simulated scans of filled public forms 78 % instead of 64 %; a box
-  mostly covered by a stronger box of another kind is dropped (a fifth fewer wrong boxes). With
-  Nutrient's optional `form-field-v1-state` model (0.4 MB) it also says whether each field is already filled
-  (right for 92–100 % of fields on clean and scanned, blank and filled forms; about 40 ms more per page).
+  [tract](https://github.com/sonos/tract). It looks at the whole page and at its top and bottom halves (each
+  scaled to the model's 640 pixels, so thin fill-in lines and small boxes stay visible) and merges the
+  results: about 160 ms per page natively on a recent laptop (three model runs; one with `tiles` off). Its
+  default threshold (0.2, the model card says 0.3) keeps far more fields on scans and filled forms; a box
+  mostly covered by a stronger box of another kind is dropped. On a
+  blind test of public forms (1,906 fields; clean and simulated scans, blank and filled) it finds 90.6 % (the
+  model card's recipe: 79.7 %). With Nutrient's optional `form-field-v1-state` model (0.4 MB) it also says
+  whether each field is already filled (right for 92–100 % of fields on clean and scanned, blank and filled
+  forms). With both, a filled scan takes about 270 ms natively and 340 ms in the browser (WebAssembly with
+  SIMD).
 
 - `crates/leafmind-qa` — answers a question about a PDF by **picking the sentence that answers it** (it
   never writes an answer, so numbers and wording are the document's own), or says it is not in the

@@ -70,6 +70,11 @@ pub struct Options {
     pub min_score: f32,
     /// Of two same-kind fields overlapping more than this (intersection over union), the weaker is dropped.
     pub max_overlap: f32,
+    /// Also look at the page's top and bottom halves (12 % overlap), each scaled to the model's 640 pixels, and
+    /// merge what all three runs find. The whole page shrunk to 640 pixels loses thin fill-in lines and small
+    /// boxes, above all on filled scans. Blind test of public forms: fields found 87.4 % → 90.6 % (filled real
+    /// scans 102 → 115 of 128), wrong boxes 89 → 194; three model runs per page instead of one.
+    pub tiles: bool,
 }
 
 impl Default for Options {
@@ -80,6 +85,7 @@ impl Default for Options {
         Self {
             min_score: 0.2,
             max_overlap: 0.6,
+            tiles: true,
         }
     }
 }
@@ -165,8 +171,32 @@ impl FieldFinder {
                 rgba.len()
             )));
         }
-        let (input, scale) = letterbox(rgba, width, height);
-        let mut fields = self.run(input, scale, options)?;
+        let (w, h) = (width as usize, height as usize);
+        let mut regions = vec![(0, h)];
+        if options.tiles {
+            // Top and bottom halves, each reaching 12 % of a half into the other (as the blind test measured).
+            let half = h as f64 / 2.0;
+            let pad = 0.12 * half;
+            regions.push((0, ((half + pad) as usize).min(h)));
+            regions.push(((half - pad) as usize, h));
+        }
+        let mut found = Vec::new();
+        for (y0, y1) in regions {
+            let tile = &rgba[y0 * w * 4..y1 * w * 4];
+            let (input, scale) = letterbox(tile, width, (y1 - y0) as u32);
+            for mut field in self.run_raw(input, scale, options)? {
+                // A field cut by a tile's inner edge is seen whole by the other half: it counts half.
+                if (y0 > 0 && field.bounds[1] < 4.0)
+                    || (y1 < h && field.bounds[3] > (y1 - y0) as f32 - 4.0)
+                {
+                    field.score *= 0.5;
+                }
+                field.bounds[1] += y0 as f32;
+                field.bounds[3] += y0 as f32;
+                found.push(field);
+            }
+        }
+        let mut fields = merge(found, options);
         if let Some(state) = &self.state {
             for field in &mut fields {
                 field.filled = Some(filled(state, rgba, width, height, &field.bounds)?);
@@ -199,6 +229,11 @@ impl FieldFinder {
     }
 
     fn run(&self, input: Vec<f32>, scale: f32, options: Options) -> Result<Vec<Field>, Error> {
+        Ok(merge(self.run_raw(input, scale, options)?, options))
+    }
+
+    /// One model run: the fields at or above the threshold, each kind's overlapping ones reduced to the strongest.
+    fn run_raw(&self, input: Vec<f32>, scale: f32, options: Options) -> Result<Vec<Field>, Error> {
         let tensor =
             tract_ndarray::Array4::from_shape_vec((1, 3, SIZE as usize, SIZE as usize), input)
                 .map_err(|e| Error::Run(e.to_string()))?
@@ -385,7 +420,7 @@ fn coefficients(input: usize, output: usize) -> (Vec<(usize, usize)>, Vec<i32>, 
 /// Score = objectness × class probability; keep the best class, drop weak boxes, then per kind drop
 /// boxes overlapping a stronger one (non-maximum suppression); map back to page pixels.
 fn decode(rows: &[f32], scale: f32, options: Options) -> Vec<Field> {
-    let mut by_kind: [Vec<Field>; 3] = Default::default();
+    let mut fields = Vec::new();
     for row in rows.as_chunks::<8>().0 {
         let (class, score) = (0..3)
             .map(|k| (k, row[4] * row[5 + k]))
@@ -395,12 +430,21 @@ fn decode(rows: &[f32], scale: f32, options: Options) -> Vec<Field> {
         }
         let (cx, cy, w, h) = (row[0], row[1], row[2], row[3]);
         let bounds = [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0].map(|v| v / scale);
-        by_kind[class].push(Field {
+        fields.push(Field {
             kind: FieldKind::from_class(class),
             score,
             bounds,
             filled: None,
         });
+    }
+    reduce(fields, options)
+}
+
+/// Of each kind's fields overlapping more than `max_overlap`, only the strongest stays.
+fn reduce(fields: Vec<Field>, options: Options) -> Vec<Field> {
+    let mut by_kind: [Vec<Field>; 3] = Default::default();
+    for field in fields {
+        by_kind[field.kind as usize].push(field);
     }
     let mut fields = Vec::new();
     for mut list in by_kind {
@@ -416,6 +460,17 @@ fn decode(rows: &[f32], scale: f32, options: Options) -> Vec<Field> {
         }
         fields.extend(kept);
     }
+    fields
+}
+
+/// The fields of one or more runs merged: overlapping ones of a kind reduced to the strongest, then those below
+/// the threshold dropped (a field cut by a tile edge, at half its score, may still have removed a weaker one),
+/// then the cross-kind rule.
+fn merge(fields: Vec<Field>, options: Options) -> Vec<Field> {
+    let fields: Vec<Field> = reduce(fields, options)
+        .into_iter()
+        .filter(|f| f.score >= options.min_score)
+        .collect();
     // The model sometimes reads one spot as two kinds (a weak "signature" over a "text" box): a field mostly
     // covered by a stronger field of another kind goes. Blind test of public forms at threshold 0.2: wrong
     // boxes 111 → 89, fields found 1,668 → 1,666 of 1,906.
@@ -486,7 +541,8 @@ mod tests {
             0.3, // signature on the same spot, 0.27: goes
             100.0, 150.0, 180.0, 18.0, 0.9, 0.0, 0.0, 0.3, // signature elsewhere, 0.27: stays
         ];
-        let kinds: Vec<_> = super::decode(&rows, 1.0, super::Options::default())
+        let options = super::Options::default();
+        let kinds: Vec<_> = super::merge(super::decode(&rows, 1.0, options), options)
             .iter()
             .map(|f| (f.kind, f.bounds[1]))
             .collect();
