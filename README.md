@@ -39,8 +39,9 @@ It is in early development.
 - `crates/leafmind-ocr` — reads the text of scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract)
   5 in English, German, Persian and Arabic. It detects a page's script and language (reading with the one
   right language is clearly better than reading with several), and groups the words into lines and
-  paragraphs itself, so the text is ready for `leafmind-qa`. The app ships the Tesseract library and its
-  language files; pages come in as images. On simulated office scans (200 dpi) it misreads 0.0 % of the
+  paragraphs itself, so the text is ready for `leafmind-qa`. Forms whose labels and values Tesseract splits
+  into columns are read row by row, and grey dot-pattern shading (e.g. behind invoice totals) is smoothed
+  before reading. The app ships the Tesseract library and its language files; pages come in as images. On simulated office scans (200 dpi) it misreads 0.0 % of the
   characters in English and German and about 4 % in Persian and Arabic, at about 0.85 s per page on an
   Apple M4; questions about the scanned documents are answered almost as well as about the originals.
   Pages are read one call at a time, so an app shows progress and can stop between pages. Shipping Tesseract:
