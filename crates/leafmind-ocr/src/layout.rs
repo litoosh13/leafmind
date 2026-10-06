@@ -7,6 +7,8 @@
 /// 0.5 to "never" changed nothing.)
 const PARAGRAPH_GAP: f32 = 0.9;
 
+use crate::OcrWord;
+
 #[derive(Debug)]
 struct Line {
     block: u32,
@@ -43,11 +45,13 @@ fn words(tsv: &str) -> impl Iterator<Item = (u32, u32, u32, f32, f32, f32, f32, 
     })
 }
 
-/// Page text with paragraphs separated by a blank line, and the median word confidence (0–1).
-pub(crate) fn page_text(tsv: &str) -> (String, f32) {
+/// Page text with paragraphs separated by a blank line, the median word confidence (0–1), and the words with
+/// their boxes in Tesseract's order.
+pub(crate) fn page_text(tsv: &str) -> (String, f32, Vec<OcrWord>) {
     let mut lines: Vec<Line> = Vec::new();
     let mut key = None;
     let mut confidences = Vec::new();
+    let mut found = Vec::new();
     for (block, par, line, left, top, width, height, conf, text) in words(tsv) {
         confidences.push(conf);
         if key != Some((block, par, line)) {
@@ -67,6 +71,12 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32) {
         current.left = current.left.min(left);
         current.right = current.right.max(left + width);
         current.words.push(text.to_string());
+        found.push(OcrWord {
+            text: text.to_string(),
+            bounds: [left, top, left + width, top + height],
+            confidence: (conf / 100.0).clamp(0.0, 1.0),
+            line: lines.len() as u32 - 1,
+        });
     }
     let mut heights: Vec<f32> = lines.iter().map(|l| l.bottom - l.top).collect();
     heights.sort_by(f32::total_cmp);
@@ -76,7 +86,7 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32) {
         .get(confidences.len() / 2)
         .map_or(0.0, |c| c / 100.0);
     if let Some(text) = form_rows(&lines, median) {
-        return (text, confidence);
+        return (text, confidence, found);
     }
     let mut text = String::new();
     for (i, line) in lines.iter().enumerate() {
@@ -93,7 +103,7 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32) {
         }
         text.push_str(&line.words.join(" "));
     }
-    (text, confidence)
+    (text, confidence, found)
 }
 
 /// Whether text is mostly right-to-left (Arabic script).
@@ -242,17 +252,37 @@ mod tests {
             row(2, 2, 1, 240, 20, 50, " "), // empty word, ignored
         ]
         .concat();
-        let (text, confidence) = page_text(&tsv);
+        let (text, confidence, words) = page_text(&tsv);
         assert_eq!(
             text,
             "Garden rules\n\nThe rent is 120 Euro.\n\nWater is included."
         );
         assert_eq!(confidence, 0.93);
+        // Every word kept with its box and confidence; the empty one dropped; one line number per TSV line.
+        let lines: Vec<(&str, u32)> = words.iter().map(|w| (w.text.as_str(), w.line)).collect();
+        assert_eq!(
+            lines,
+            [
+                ("Garden", 0),
+                ("rules", 0),
+                ("The", 1),
+                ("rent", 1),
+                ("is", 2),
+                ("120 Euro.", 2),
+                ("Water", 3),
+                ("is included.", 3)
+            ]
+        );
+        assert_eq!(words[4].bounds, [10.0, 184.0, 60.0, 204.0]);
+        assert_eq!(words[5].confidence, 0.7);
     }
 
     #[test]
     fn nothing_recognised() {
-        assert_eq!(page_text("level\tpage_num\n"), (String::new(), 0.0));
+        assert_eq!(
+            page_text("level\tpage_num\n"),
+            (String::new(), 0.0, Vec::new())
+        );
     }
 
     /// One word at a position: (block, line, left, top, text); words of a line are given in reading order.
@@ -281,7 +311,7 @@ mod tests {
             words.push((1, k as u32, 100, top, *label));
             words.push((2, k as u32, 400, top + 2, *value));
         }
-        let (text, _) = page_text(&tsv(&words));
+        let (text, _, _) = page_text(&tsv(&words));
         assert_eq!(
             text,
             "Plot: B-14\nDate: 14.05.2027\nMember: 4711\nRent: 120 Euro"
@@ -308,7 +338,7 @@ mod tests {
                 ));
             }
         }
-        let (text, _) = page_text(&tsv(&words));
+        let (text, _, _) = page_text(&tsv(&words));
         assert!(
             text.contains("the left column runs on with a long line the left column"),
             "{text}"

@@ -31,9 +31,9 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -135,6 +135,10 @@ let (w, h) = page.dimensions();
 let language = ocr.detect_language(page.as_raw(), w, h, Some(200))?.unwrap_or(OcrLanguage::English);
 let text = ocr.read(page.as_raw(), w, h, &[language], Some(200))?;
 println!("{} (confidence {:.2})", text.text, text.confidence);
+for word in &text.words {
+    let [left, top, right, bottom] = word.bounds; // pixels of this image, e.g. for a searchable text layer
+    println!("{} on line {} at {left},{top}–{right},{bottom}", word.text, word.line);
+}
 ```
 
 Pass the scan's resolution (dpi) if you know it. Each call reads one page, so you can show progress and stop

@@ -47,6 +47,43 @@ fn reads_an_invented_form() {
     );
     assert!(page.text.contains("Date of birth"), "{}", page.text);
     assert!(page.confidence > 0.8, "{}", page.confidence);
+    // Word boxes sit where make_testdata.py drew the words: (word, x, baseline, font size) in PDF points from
+    // the top, rendered at 1.5 pixels per point.
+    for (word, x, baseline, size) in [
+        ("Library", 56.0, 70.0, 16.0),
+        ("Date", 62.0, 184.0, 9.0),
+        ("Student", 371.0, 337.0, 9.0),
+        ("yes", 255.0, 368.0, 9.0),
+    ] {
+        let w = page.words.iter().find(|w| w.text == word).unwrap();
+        let [left, top, right, bottom] = w.bounds;
+        assert!((left - 1.5 * x).abs() < 4.0, "{word}: {:?}", w.bounds);
+        assert!(
+            top > 1.5 * (baseline - size) - 3.0,
+            "{word}: {:?}",
+            w.bounds
+        );
+        assert!(
+            bottom < 1.5 * (baseline + 0.3 * size) + 3.0,
+            "{word}: {:?}",
+            w.bounds
+        );
+        assert!(right > left && w.confidence > 0.5, "{w:?}");
+    }
+    // The words of a line share its number; lines count up in Tesseract's order.
+    let date = page.words.iter().position(|w| w.text == "Date").unwrap();
+    assert_eq!(
+        page.words[date..date + 3]
+            .iter()
+            .map(|w| (w.text.as_str(), w.line))
+            .collect::<Vec<_>>(),
+        [
+            ("Date", page.words[date].line),
+            ("of", page.words[date].line),
+            ("birth", page.words[date].line)
+        ]
+    );
+    assert!(page.words.windows(2).all(|p| p[0].line <= p[1].line));
     // Reading again reuses the same Tesseract instance and gives the same text.
     assert_eq!(
         ocr.read(&rgba, w, h, &[OcrLanguage::English], Some(108))

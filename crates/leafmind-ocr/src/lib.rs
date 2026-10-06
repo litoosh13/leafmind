@@ -104,6 +104,22 @@ pub struct OcrPage {
     pub text: String,
     /// Median word confidence (0–1); low values mean a poor scan or the wrong languages.
     pub confidence: f32,
+    /// The recognised words with their positions, e.g. for a searchable text layer over the scan. In
+    /// Tesseract's order, line by line; `text` follows it except for form grids, which it reads row by row.
+    pub words: Vec<OcrWord>,
+}
+
+/// One recognised word.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OcrWord {
+    pub text: String,
+    /// Left, top, right, bottom in pixels of the image passed to [`OcrEngine::read`].
+    pub bounds: [f32; 4],
+    /// Tesseract's confidence for this word, 0–1.
+    pub confidence: f32,
+    /// The line it is on, counted from 0 in Tesseract's order; the words of a line share it and come in the
+    /// order Tesseract gives them (right-to-left lines too).
+    pub line: u32,
 }
 
 /// Loaded Tesseract. Can be shared between threads; each language set gets its own Tesseract instance.
@@ -184,8 +200,12 @@ impl OcrEngine {
         clean_shading(&mut grey, width as usize, height as usize);
         let codes: Vec<&str> = languages.iter().map(|l| l.code()).collect();
         let tsv = self.with_instance(&codes.join("+"), |t| t.tsv(&grey, width, height, dpi))??;
-        let (text, confidence) = layout::page_text(&tsv);
-        Ok(OcrPage { text, confidence })
+        let (text, confidence, words) = layout::page_text(&tsv);
+        Ok(OcrPage {
+            text,
+            confidence,
+            words,
+        })
     }
 
     /// The page's language: its script (see [`Self::detect_script`]), then one reading with the script's first
