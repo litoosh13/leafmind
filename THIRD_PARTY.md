@@ -23,8 +23,8 @@
 
 ## third_party/pdf-inspector (patched copy of pdf-inspector 1.24.0)
 
-- **What:** Rust library that turns PDF pages into markdown text; used by `leafmind-qa` through
-  `[patch.crates-io]`. Includes the CMap tables in `external/bcmaps/` (data compiled into the library).
+- **What:** Rust library that turns PDF pages into markdown text; used by `leafmind-qa` as a path
+  dependency (so projects that use leafmind get the patched copy too). Includes the CMap tables in `external/bcmaps/` (data compiled into the library).
 - **Source:** https://crates.io/crates/pdf-inspector/1.24.0 (upstream https://github.com/firecrawl/pdf-inspector),
   downloaded 2026-09-24. `.crate` SHA-256:
   `e22dc125a533d212c847c8c85e4fcb7358f4384869ef76b2b8721f039b1b633a`.

@@ -4,7 +4,8 @@ This folder is pdf-inspector 1.24.0 as published on crates.io
 (https://crates.io/crates/pdf-inspector/1.24.0, upstream https://github.com/firecrawl/pdf-inspector;
 `.crate` SHA-256 `e22dc125a533d212c847c8c85e4fcb7358f4384869ef76b2b8721f039b1b633a`), MIT (see `LICENSE`).
 The CMap tables in `external/bcmaps/` are Adobe's, under the licence in `external/bcmaps/LICENSE`.
-It is used through `[patch.crates-io]` in the workspace `Cargo.toml`.
+The workspace `Cargo.toml` uses it as a path dependency (not `[patch.crates-io]`, which only applies to the
+top-level project), so projects that depend on leafmind get the patched copy too.
 
 ## Why
 

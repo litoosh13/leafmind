@@ -1,0 +1,45 @@
+# A release: push a tag like v0.2.0 that matches the version in Cargo.toml. Runs all of CI, then makes a GitHub
+# release with notes and the field finder's browser package (wasm-pack, SIMD) plus its two models. Rust projects
+# depend on the tag itself (see "Using leafmind in another project" in the README).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches the version in Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          test "$GITHUB_REF_NAME" = "v$version" || { echo "tag $GITHUB_REF_NAME but Cargo.toml has $version"; exit 1; }
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+      - name: Browser package
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+        run: |
+          wasm-pack build crates/leafmind-fields --release --target web --out-dir "$PWD/dist/leafmind-fields-wasm" -- --features wasm
+          cp models/form-field-v1-nano.onnx models/form-field-v1-state.onnx models/LICENSE-APACHE-2.0 LICENSE dist/leafmind-fields-wasm/
+          cd dist && zip -r "leafmind-fields-wasm-$GITHUB_REF_NAME.zip" leafmind-fields-wasm
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
+            --notes "Use it from Cargo: \`leafmind-qa = { git = \"https://github.com/${{ github.repository }}\", tag = \"$GITHUB_REF_NAME\" }\` (same for leafmind-fields and leafmind-ocr). The zip is the field finder for the browser, built with SIMD, with its two models." \
+            "dist/leafmind-fields-wasm-$GITHUB_REF_NAME.zip"

@@ -53,6 +53,22 @@ It is in early development.
   Homebrew's Tesseract and its libraries into one folder an app can ship), on Linux the distribution's
   package; the libraries and their licences are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
 
+## Using leafmind in another project
+
+leafmind is not on crates.io. Depend on a release tag (https://github.com/litoosh13/leafmind/releases):
+
+```toml
+[dependencies]
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
+```
+
+leafmind is built and tested with Rust 1.98.1. The app ships what leafmind loads at run time: the field
+models (`models/`), the question-answering models and ONNX Runtime 1.30, Tesseract 5 and its language files
+(see Models). For the browser, each release has the field finder as a WebAssembly package
+(`leafmind-fields-wasm-<tag>.zip`, built with SIMD, with its two models).
+
 ## Building and testing
 
 ```bash
@@ -65,7 +81,7 @@ The question-answering tests with the real models are skipped by default. To run
 
 ```bash
 scripts/fetch-qa-models.sh models/qa            # add "accurate" for accurate mode's model (2.4 GB)
-LEAFMIND_QA_MODELS=models/qa LEAFMIND_ORT=/path/to/libonnxruntime.dylib \
+LEAFMIND_QA_MODELS=$PWD/models/qa LEAFMIND_ORT=/path/to/libonnxruntime.dylib \
     cargo test -p leafmind-qa --release -- --ignored
 ```
 
@@ -74,7 +90,7 @@ The OCR tests with the real Tesseract are skipped by default as well. They need 
 
 ```bash
 scripts/fetch-tessdata.sh models/tessdata
-LEAFMIND_TESSERACT=/opt/homebrew/lib/libtesseract.5.dylib LEAFMIND_TESSDATA=models/tessdata \
+LEAFMIND_TESSERACT=/opt/homebrew/lib/libtesseract.5.dylib LEAFMIND_TESSDATA=$PWD/models/tessdata \
     cargo test -p leafmind-ocr -- --ignored
 ```
 

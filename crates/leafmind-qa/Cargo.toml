@@ -4,6 +4,7 @@ description = "Answers questions about a document by picking its answer sentence
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
 
 [dependencies]

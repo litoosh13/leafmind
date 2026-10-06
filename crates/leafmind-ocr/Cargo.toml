@@ -4,6 +4,7 @@ description = "Reads the text of scanned pages (English, German, Persian, Arabic
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 publish.workspace = true
 
 [dependencies]

@@ -1,0 +1,2 @@
+# Upstream code, kept as published (plus leafmind's patches): leafmind's cargo fmt leaves it alone.
+disable_all_formatting = true

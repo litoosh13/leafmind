@@ -1,0 +1,71 @@
+# Checks every push to main and every pull request; release.yml runs it again before a release.
+# The Rust version and the wasm target come from rust-toolchain.toml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy -p leafmind-fields --features wasm --target wasm32-unknown-unknown -- -D warnings
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  # The tests that are skipped by default: OCR with the real Tesseract, and question answering with the real
+  # models (fast and accurate mode) on ONNX Runtime 1.30, on Linux x86.
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: models/qa
+          key: qa-models-${{ hashFiles('scripts/fetch-qa-models.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: models/tessdata
+          key: tessdata-${{ hashFiles('scripts/fetch-tessdata.sh') }}
+      - run: scripts/fetch-qa-models.sh models/qa accurate
+      - run: scripts/fetch-tessdata.sh models/tessdata
+      - name: ONNX Runtime 1.30
+        run: |
+          curl -fsSL https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz | tar xz
+          echo "LEAFMIND_ORT=$PWD/onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so" >> "$GITHUB_ENV"
+      - run: sudo apt-get update && sudo apt-get install -y libtesseract5
+      - name: OCR tests
+        env:
+          LEAFMIND_TESSERACT: /usr/lib/x86_64-linux-gnu/libtesseract.so.5
+          LEAFMIND_TESSDATA: ${{ github.workspace }}/models/tessdata
+        run: cargo test -p leafmind-ocr -- --ignored
+      - name: Question-answering tests
+        env:
+          LEAFMIND_QA_MODELS: ${{ github.workspace }}/models/qa
+        run: cargo test -p leafmind-qa --release -- --ignored

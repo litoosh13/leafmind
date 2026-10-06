@@ -1,11 +1,13 @@
 [workspace]
 resolver = "3"
 members = ["crates/leafmind-fields", "crates/leafmind-ocr", "crates/leafmind-qa"]
+exclude = ["third_party/pdf-inspector"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-only"
+repository = "https://github.com/litoosh13/leafmind"
 publish = false
 
 [workspace.dependencies]
@@ -15,15 +17,14 @@ libloading = "0.9"
 lingua = { version = "1.8", default-features = false, features = ["english", "german", "persian", "arabic"] }
 # ONNX Runtime bindings; the app ships the ONNX Runtime library and names it (load-dynamic).
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "std"] }
-pdf-inspector = { version = "=1.24.0", default-features = false }
+# pdf-inspector 1.24.0 with leafmind's two patches (third_party/pdf-inspector/LEAFMIND_PATCH.md). A path dependency,
+# not [patch.crates-io], so projects that use leafmind get the patched copy too ([patch] only applies to the
+# top-level project).
+pdf-inspector = { path = "third_party/pdf-inspector", default-features = false }
 regex = "1"
 tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
 tract-onnx = "0.23"
 wasm-bindgen = "0.2"
-
-# pdf-inspector with leafmind's keep-ZWNJ patch (third_party/pdf-inspector/LEAFMIND_PATCH.md)
-[patch.crates-io]
-pdf-inspector = { path = "third_party/pdf-inspector" }
 
 [profile.release]
 opt-level = 3
