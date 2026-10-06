@@ -142,17 +142,17 @@ What this asks of an app (not legal advice):
 - The GCC runtime's exception allows shipping `libgcc_s` and `libstdc++` with any program; Zstandard can be
   used under its BSD licence.
 
-**macOS** — `scripts/bundle-tesseract-macos.sh <dir>` copies Homebrew's Tesseract and the 14 libraries it needs
-into one folder that an app can ship (references rewritten to `@loader_path`, signed again ad hoc); tested:
-the OCR tests pass with it and nothing is loaded from Homebrew. With Homebrew's Tesseract 5.5.3 and Leptonica
-1.87.0 the folder holds Tesseract (Apache-2.0), Leptonica (BSD-2-Clause), libarchive (BSD-2-Clause), libpng
-(libpng-2.0), libjpeg-turbo (IJG AND BSD-3-Clause AND Zlib), GIFLIB (MIT), LibTIFF (libtiff), libwebp,
-libwebpmux and libsharpyuv (BSD-3-Clause), OpenJPEG (BSD-2-Clause), XZ Utils (0BSD), Zstandard (BSD-3-Clause
-OR GPL-2.0-only), LZ4 (BSD-2-Clause) and libb2 (CC0-1.0) — no GPL or LGPL library; the rest (libcurl, libc++, Expat,
-Accelerate, libiconv, zlib, bzip2) comes with macOS. Homebrew builds for the macOS it runs on (here macOS 27 is
-the lowest version the folder runs on); an app for older macOS versions builds Tesseract itself with
-`MACOSX_DEPLOYMENT_TARGET` set. Licence texts: each Homebrew package's folder under `$(brew --prefix)/Cellar/`.
+**macOS** — each release has `tesseract-macos-<tag>.zip`, built in CI by `scripts/build-tesseract-macos.sh`
+(the same script builds it locally): Tesseract 5.5.3 (https://github.com/tesseract-ocr/tesseract, source
+`5.5.3.tar.gz` SHA-256 `9218e62793116d42a9f6d14cd9348518b27f382096eea3d0f2d1a24616bb5884`, Apache-2.0) with
+Leptonica 1.87.0 linked in (https://github.com/DanBloomberg/leptonica, source `leptonica-1.87.0.tar.gz` SHA-256
+`c73363397f96eb1295602bf44d708a994ad42046c791bf03ea0505d829bdb6a7`, BSD-2-Clause), as one universal
+`libtesseract.5.dylib` (Apple silicon and Intel, macOS 11 or newer). leafmind gives Tesseract raw pixels, so the
+build has no image formats, libarchive or libcurl: the library needs only macOS's own libSystem and libc++, and
+these two licences (shipped beside it as `LICENSE-tesseract` and `LICENSE-leptonica`) are all. Tested
+2026-10-06: the OCR tests pass on Apple silicon and as an Intel build under Rosetta, and on the 62 benchmark scans
+it reads exactly the same text as Homebrew's Tesseract 5.5.3, slightly faster (1.06 against 1.16 s per page).
 
 **Linux** — distributions package Tesseract 5 (Debian/Ubuntu `libtesseract5`, Fedora `tesseract-libs`); an app
 can depend on that package and give leafmind its path (e.g. `/usr/lib/x86_64-linux-gnu/libtesseract.so.5`), or
-bundle the libraries the same way as on macOS. Not tested yet.
+bundle the libraries. Tested in CI on Ubuntu (`libtesseract5`).

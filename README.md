@@ -8,54 +8,26 @@ leafmind is written in Rust. The field finder runs natively (desktop apps) and i
 you give it, so it is not tied to any one app.
 It is in early development.
 
-## Parts
+## What it does
 
-- `crates/leafmind-fields` — finds form fields (text boxes, checkboxes/radio buttons, signature areas) on a
-  page image with Nutrient's `form-field-v1-nano` detector (0.9 M parameters) run by
-  [tract](https://github.com/sonos/tract). It looks at the whole page and at its top and bottom halves (each
-  scaled to the model's 640 pixels, so thin fill-in lines and small boxes stay visible) and merges the
-  results: about 160 ms per page natively on a recent laptop (three model runs; one with `tiles` off). Its
-  default threshold (0.2, the model card says 0.3) keeps far more fields on scans and filled forms; a box
-  mostly covered by a stronger box of another kind is dropped. On a
-  blind test of public forms (1,906 fields; clean and simulated scans, blank and filled) it finds 90.6 % (the
-  model card's recipe: 79.7 %). With Nutrient's optional `form-field-v1-state` model (0.4 MB) it also says
-  whether each field is already filled (right for 92–100 % of fields on clean and scanned, blank and filled
-  forms). With both, a filled scan takes about 270 ms natively and 340 ms in the browser (WebAssembly with
-  SIMD).
+- **`leafmind-fields`** — finds the form fields on a page image: text boxes, checkboxes/radio buttons and
+  signature areas, and (optionally) whether each one is already filled. Native and in the browser. On a blind
+  test of public forms (clean and scanned, blank and filled) it finds 90.6 % of the fields; about 270 ms per
+  filled scan natively, 340 ms in the browser.
+- **`leafmind-qa`** — answers a question about a PDF by **picking the sentence that answers it**, so numbers
+  and wording are the document's own; otherwise it says the answer is not in the document. English, German,
+  Persian and Arabic. Fast mode about 0.15 s per question; the optional accurate mode about 1 s (Apple M4)
+  and finds clearly more answers in real documents.
+- **`leafmind-ocr`** — reads scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract) 5 in
+  the same four languages, detects the page's language, and returns paragraphs ready for `leafmind-qa`. On
+  office-quality scans: 0.0 % wrong characters in English and German, about 4 % in Persian and Arabic.
 
-- `crates/leafmind-qa` — answers a question about a PDF by **picking the sentence that answers it** (it
-  never writes an answer, so numbers and wording are the document's own), or says it is not in the
-  document, or asks for the question in the document's language. Pipeline: PDF text (pdf-inspector, with a
-  patch that keeps the Persian zero-width non-joiner) → paragraphs → keyword search (BM25) + embedding search
-  (gte-multilingual-base), merged by rank fusion → the reranker gte-multilingual-reranker-base scores the
-  sentences of the best paragraphs. Languages: English, German, Persian, Arabic (language check by lingua).
-  Runs on ONNX Runtime, which the app ships. About 0.15 s per question on an Apple M4 (4 threads); the models
-  take about 1.5 GB of memory while running.
-  An optional **accurate mode** (`ask_accurate`) lets a second, larger reranker (Qwen3-Reranker-0.6B in
-  leafmind's own full-precision export, 2.4 GB) choose among the 12 best sentences, each read together with the
-  heading of its section. On the project's synthetic test set it answers 96 of 117 questions with 1 wrong
-  (fast mode: 90, 1 wrong), and it finds clearly more answers in real documents: on the real-document test set
-  40 of 51 with 4 wrong, against 31 with 8 wrong for the fast mode (or 23 with none wrong at a stricter cutoff).
-  It takes about 1 s per question on an Apple M4 and about 4 s on an x86 office PC
-  (Intel i5-12500), and about 3.5 GB of memory in all. Its scores are the same on both kinds of CPU (the 8-bit
-  versions of the model were not).
+## Using leafmind in your project
 
-- `crates/leafmind-ocr` — reads the text of scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract)
-  5 in English, German, Persian and Arabic. It detects a page's script and language (reading with the one
-  right language is clearly better than reading with several), and groups the words into lines and
-  paragraphs itself, so the text is ready for `leafmind-qa`. Forms whose labels and values Tesseract splits
-  into columns are read row by row, and grey dot-pattern shading (e.g. behind invoice totals) is smoothed
-  before reading. The app ships the Tesseract library and its language files; pages come in as images. On simulated office scans (200 dpi) it misreads 0.0 % of the
-  characters in English and German and about 4 % in Persian and Arabic, at about 0.85 s per page on an
-  Apple M4; questions about the scanned documents are answered almost as well as about the originals.
-  Pages are read one call at a time, so an app shows progress and can stop between pages. Shipping Tesseract:
-  on Windows the DLL set from UB Mannheim's build, on macOS `scripts/bundle-tesseract-macos.sh` (copies
-  Homebrew's Tesseract and its libraries into one folder an app can ship), on Linux the distribution's
-  package; the libraries and their licences are listed in [THIRD_PARTY.md](THIRD_PARTY.md).
+### 1. Add it
 
-## Using leafmind in another project
-
-leafmind is not on crates.io. Depend on a release tag (https://github.com/litoosh13/leafmind/releases):
+leafmind is not on crates.io; depend on a tag from [Releases](https://github.com/litoosh13/leafmind/releases)
+(use the newest). Add only the parts you need:
 
 ```toml
 [dependencies]
@@ -64,12 +36,117 @@ leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
 leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.1.0" }
 ```
 
-leafmind is built and tested with Rust 1.98.1. The app ships what leafmind loads at run time: the field
-models (`models/`), the question-answering models and ONNX Runtime 1.30, Tesseract 5 and its language files
-(see Models). For the browser, each release has the field finder as a WebAssembly package
-(`leafmind-fields-wasm-<tag>.zip`, built with SIMD, with its two models).
+Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
+libraries below and tells leafmind where they are.
 
-## Building and testing
+### 2. Ship what each part needs
+
+| Part | Your app ships | Where to get it |
+|---|---|---|
+| `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
+| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 680 MB); optionally `qwen3-reranker/` for accurate mode (2.4 GB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir> [accurate]` |
+| `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
+
+Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
+
+### 3. Find form fields
+
+```rust
+use leafmind_fields::{FieldFinder, FieldKind};
+
+let finder = FieldFinder::from_onnx(&std::fs::read("models/form-field-v1-nano.onnx")?)?
+    .with_state(&std::fs::read("models/form-field-v1-state.onnx")?)?; // optional: filled or empty
+
+let page = image::open("page.png")?.to_rgba8(); // a rendered PDF page or a scan
+for field in finder.find(page.as_raw(), page.width(), page.height())? {
+    let [left, top, right, bottom] = field.bounds; // pixels of this image
+    match field.kind {
+        FieldKind::Text => println!("text box at {left},{top}–{right},{bottom}, filled: {:?}", field.filled),
+        FieldKind::Choice => println!("checkbox at {left},{top}"),
+        FieldKind::Signature => println!("signature area at {left},{top}"),
+    }
+}
+```
+
+Create the finder once and reuse it. `find_with` takes `Options` (threshold, and `tiles: false` for about
+twice the speed at fewer fields found).
+
+**In the browser:** unzip `leafmind-fields-wasm-<tag>.zip` from Releases (the package and both models) into
+your site:
+
+```js
+import init, { FieldFinder } from './leafmind-fields-wasm/leafmind_fields.js';
+await init();
+const bytes = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+const finder = new FieldFinder(await bytes('leafmind-fields-wasm/form-field-v1-nano.onnx'))
+  .withState(await bytes('leafmind-fields-wasm/form-field-v1-state.onnx'));
+
+const { data, width, height } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+const flat = finder.find(data, width, height); // 7 numbers per field:
+for (let i = 0; i < flat.length; i += 7) {
+  const [kind, score, left, top, right, bottom, filled] = flat.slice(i, i + 7);
+  // kind 0 text, 1 checkbox, 2 signature; filled 1 / 0 (−1 without the state model)
+}
+```
+
+### 4. Answer questions about a PDF
+
+```rust
+use leafmind_qa::{Answer, QaEngine, QaModels, QaOptions};
+
+let qa = QaEngine::load(
+    &QaModels {
+        onnxruntime: "libs/libonnxruntime.dylib".into(), // onnxruntime.dll, libonnxruntime.so
+        embedder: "models/qa/gte-embed".into(),
+        reranker: "models/qa/gte-reranker".into(),
+        accurate_reranker: None, // or Some("models/qa/qwen3-reranker".into()) for ask_accurate
+    },
+    QaOptions::default(),
+)?;
+
+let doc = qa.index_pdf(&std::fs::read("contract.pdf")?)?; // once per document; keep it while it is open
+match qa.ask(&doc, "When does the contract end?")? {
+    Answer::Found { sentences, confidence } => {
+        for s in sentences {
+            println!("page {}: {} ({confidence:.2})", s.page, s.text);
+        }
+    }
+    Answer::NotFound { .. } => println!("not in the document"),
+    Answer::WrongLanguage { document, .. } => println!("please ask in {document:?}"),
+}
+```
+
+Load the engine once at start (it takes about 1.5 GB of memory; 3.5 GB with accurate mode). `ask_accurate`
+works the same way. `sentences` can hold more than one: the answer, then amendments that change it.
+
+### 5. Read scanned pages
+
+```rust
+use leafmind_ocr::{OcrEngine, OcrLanguage, OcrModels};
+
+let ocr = OcrEngine::load(&OcrModels {
+    tesseract: "libs/libtesseract.5.dylib".into(), // libtesseract.so.5, libtesseract-5.dll
+    tessdata: "models/tessdata".into(),
+})?;
+
+let page = image::open("scan.png")?.to_rgba8();
+let (w, h) = page.dimensions();
+// Find the language on a page with plenty of text, then read every page with it.
+let language = ocr.detect_language(page.as_raw(), w, h, Some(200))?.unwrap_or(OcrLanguage::English);
+let text = ocr.read(page.as_raw(), w, h, &[language], Some(200))?;
+println!("{} (confidence {:.2})", text.text, text.confidence);
+```
+
+Pass the scan's resolution (dpi) if you know it. Each call reads one page, so you can show progress and stop
+between pages. To ask questions about a scanned document, give the page texts to `leafmind-qa`:
+`qa.index_pages(&[(1, page1_text), (2, page2_text)])`.
+
+### Licence for your project
+
+leafmind is AGPL-3.0: an app that includes it must be released under a compatible licence, with its source
+available to its users (also when they use it over a network).
+
+## Developing leafmind
 
 ```bash
 cargo test                      # native tests, including the field model on a synthetic form
@@ -95,14 +172,6 @@ LEAFMIND_TESSERACT=/opt/homebrew/lib/libtesseract.5.dylib LEAFMIND_TESSDATA=$PWD
 ```
 
 For speed in the browser, build WebAssembly with SIMD: `RUSTFLAGS="-C target-feature=+simd128"`.
-
-## Models
-
-See [THIRD_PARTY.md](THIRD_PARTY.md). The field detector (`models/form-field-v1-nano.onnx`) is
-Apache-2.0, by Nutrient. The question-answering models (gte-multilingual-base and
-gte-multilingual-reranker-base, Apache-2.0, by Alibaba) are not in the repository; `scripts/fetch-qa-models.sh`
-downloads them. The Tesseract language files (Apache-2.0) are not in the repository either;
-`scripts/fetch-tessdata.sh` downloads them.
 
 ## License
 

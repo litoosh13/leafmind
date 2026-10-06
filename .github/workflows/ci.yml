@@ -37,6 +37,33 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
 
+  # The Tesseract library for macOS apps (scripts/build-tesseract-macos.sh: universal, macOS 11+, nothing else
+  # needed), checked with the OCR tests; release.yml attaches it to the release.
+  tesseract-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: models/tessdata
+          key: tessdata-${{ hashFiles('scripts/fetch-tessdata.sh') }}
+      - run: scripts/fetch-tessdata.sh models/tessdata
+      - name: Build Tesseract
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools" && "$RUNNER_TEMP/tools/bin/pip" install -q cmake ninja
+          PATH="$RUNNER_TEMP/tools/bin:$PATH" scripts/build-tesseract-macos.sh dist/tesseract-macos
+      - name: OCR tests with it
+        env:
+          LEAFMIND_TESSERACT: ${{ github.workspace }}/dist/tesseract-macos/libtesseract.5.dylib
+          LEAFMIND_TESSDATA: ${{ github.workspace }}/models/tessdata
+        run: cargo test -p leafmind-ocr -- --ignored
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-macos
+          path: dist/tesseract-macos
+
   # The tests that are skipped by default: OCR with the real Tesseract, and question answering with the real
   # models (fast and accurate mode) on ONNX Runtime 1.30, on Linux x86.
   models:
