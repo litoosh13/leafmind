@@ -138,7 +138,8 @@ println!("{} (confidence {:.2})", text.text, text.confidence);
 ```
 
 Pass the scan's resolution (dpi) if you know it. Each call reads one page, so you can show progress and stop
-between pages. To ask questions about a scanned document, give the page texts to `leafmind-qa`:
+between pages. On Linux with the distribution's Tesseract (built with OpenMP), start your app with
+`OMP_THREAD_LIMIT=1`, as Tesseract advises when it runs inside a larger program. To ask questions about a scanned document, give the page texts to `leafmind-qa`:
 `qa.index_pages(&[(1, page1_text), (2, page2_text)])`.
 
 ### Licence for your project

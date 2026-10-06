@@ -35,8 +35,9 @@ pub(crate) struct Api {
     delete_text: DeleteText,
     detect_orientation_script: DetectOrientationScript,
     pub(crate) version: String,
-    // Keeps the functions above valid.
-    _library: Library,
+    // Keeps the functions above valid. Never unloaded: Tesseract built with OpenMP (e.g. Ubuntu's) leaves worker
+    // threads running in it, and unloading it under them crashed the process at exit (Linux CI).
+    _library: std::mem::ManuallyDrop<Library>,
 }
 
 fn open(path: &Path) -> Result<Library, libloading::Error> {
@@ -88,7 +89,7 @@ impl Api {
                 delete_text: f!("TessDeleteText"),
                 detect_orientation_script: f!("TessBaseAPIDetectOrientationScript"),
                 version,
-                _library: library,
+                _library: std::mem::ManuallyDrop::new(library),
             })
         }
     }

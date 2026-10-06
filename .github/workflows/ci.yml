@@ -90,6 +90,9 @@ jobs:
       - name: OCR tests
         env:
           LEAFMIND_TESSERACT: /usr/lib/x86_64-linux-gnu/libtesseract.so.5
+          # Ubuntu's Tesseract uses OpenMP; with several instances in one process Tesseract's docs advise one
+          # OpenMP thread (and the test process sometimes crashed at exit without it).
+          OMP_THREAD_LIMIT: 1
           LEAFMIND_TESSDATA: ${{ github.workspace }}/models/tessdata
         run: cargo test -p leafmind-ocr -- --ignored
       - name: Question-answering tests
