@@ -31,9 +31,9 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.2.0" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -118,6 +118,18 @@ match qa.ask(&doc, "When does the contract end?")? {
 
 Load the engine once at start (it takes about 1.5 GB of memory; 3.5 GB with accurate mode). `ask_accurate`
 works the same way. `sentences` can hold more than one: the answer, then amendments that change it.
+
+To skip indexing when a document is opened again, keep its index as bytes (about 3 KB per chunk) and load it
+next time. Loading refuses bytes that are damaged, from another leafmind format, or made with another embedder
+model or chunking setting; then index the document again:
+
+```rust
+let bytes = qa.save_document(&doc); // store it where your app keeps its cache
+let doc = match qa.load_document(&bytes) {
+    Ok(doc) => doc,
+    Err(_) => qa.index_pdf(&pdf)?, // stale or damaged: index again
+};
+```
 
 ### 5. Read scanned pages
 

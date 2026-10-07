@@ -4,6 +4,7 @@
 
 use crate::accurate::Accurate;
 use crate::language::{Language, LanguageCheck};
+use crate::saved;
 use crate::search::{self, Bm25};
 use crate::text::{self, Chunking};
 use crate::{Error, Passage};
@@ -213,6 +214,8 @@ pub struct QaEngine {
     accurate: Option<Accurate>,
     language: LanguageCheck,
     options: QaOptions,
+    /// Of the embedder's model and tokenizer files: saved documents must come from the same ones.
+    embedder_fingerprint: u64,
 }
 
 impl QaEngine {
@@ -235,6 +238,37 @@ impl QaEngine {
             },
             language: LanguageCheck::new(),
             options,
+            embedder_fingerprint: saved::fingerprint(&[
+                models.embedder.join("model_int8.onnx"),
+                models.embedder.join("tokenizer.json"),
+            ])?,
+        })
+    }
+
+    fn saved_key(&self) -> saved::Key {
+        saved::Key {
+            embedder: self.embedder_fingerprint,
+            chunking: self.options.chunking,
+        }
+    }
+
+    /// The prepared document as bytes, so the app can keep it (e.g. in a cache) and skip indexing it again.
+    /// About 3 KB per chunk.
+    pub fn save_document(&self, doc: &Document) -> Vec<u8> {
+        saved::to_bytes(self.saved_key(), &doc.chunks, &doc.vectors, doc.language)
+    }
+
+    /// A document from [`Self::save_document`]. Refused ([`Error::SavedDocument`]) when the bytes are damaged,
+    /// from another leafmind format, or saved with another embedder model or chunking setting: then index the
+    /// document again.
+    pub fn load_document(&self, bytes: &[u8]) -> Result<Document, Error> {
+        let (chunks, vectors, language) = saved::from_bytes(self.saved_key(), bytes)?;
+        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+        Ok(Document {
+            bm25: Bm25::new(&texts),
+            vectors,
+            chunks,
+            language,
         })
     }
 

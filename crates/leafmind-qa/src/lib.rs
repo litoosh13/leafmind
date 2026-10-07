@@ -34,6 +34,7 @@ mod engine;
 pub mod language;
 #[cfg(test)]
 mod model_tests;
+mod saved;
 pub mod search;
 #[cfg(test)]
 mod test_pdf;
@@ -49,6 +50,9 @@ pub enum Error {
     Pdf(String),
     /// ONNX Runtime or a model could not be loaded or run.
     Model(String),
+    /// Bytes from [`QaEngine::save_document`] that cannot be used: damaged, from another leafmind format,
+    /// or saved with another embedder model or chunking setting (index the document again).
+    SavedDocument(String),
 }
 
 impl fmt::Display for Error {
@@ -56,6 +60,7 @@ impl fmt::Display for Error {
         match self {
             Error::Pdf(why) => write!(f, "could not read the PDF: {why}"),
             Error::Model(why) => write!(f, "model error: {why}"),
+            Error::SavedDocument(why) => write!(f, "saved document cannot be used: {why}"),
         }
     }
 }

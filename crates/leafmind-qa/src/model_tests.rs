@@ -197,3 +197,40 @@ fn arabic_text() {
         Language::German,
     );
 }
+
+#[test]
+#[ignore = "needs the ONNX models and ONNX Runtime (LEAFMIND_QA_MODELS, LEAFMIND_ORT)"]
+fn a_saved_document_answers_the_same() {
+    let pdf = crate::test_pdf::pdf(&[&[
+        "# Garden plot agreement",
+        "",
+        "The yearly plot rent is 120 Euro and is paid in March.",
+        "",
+        "Amendment 1: with effect from 2028 the yearly plot rent is 135 Euro.",
+        "",
+        "Water is included in the rent. The water tap is closed on 31 October.",
+    ]]);
+    let doc = engine().index_pdf(&pdf).unwrap();
+    let bytes = engine().save_document(&doc);
+    let loaded = engine().load_document(&bytes).unwrap();
+    assert_eq!(loaded.chunks(), doc.chunks());
+    assert_eq!(loaded.language(), doc.language());
+    for question in [
+        "How much is the yearly plot rent?",
+        "When is the water tap closed?",
+        "What colour is the club house?",
+        "Wie hoch ist die jährliche Pacht?",
+    ] {
+        // Same answers, sentences and confidences, in both modes.
+        assert_eq!(
+            answers(&loaded, question),
+            answers(&doc, question),
+            "{question}"
+        );
+    }
+    // Bytes saved with another embedder model are refused (the fingerprint follows the header's first 8 bytes).
+    let mut other = bytes.clone();
+    other[8] ^= 1;
+    let err = engine().load_document(&other).unwrap_err().to_string();
+    assert!(err.contains("another embedder"), "{err}");
+}
