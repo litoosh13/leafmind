@@ -39,12 +39,33 @@ Measured on invented filled forms: a German form with umlauts in its field names
 complete text; the crate's own unit tests pass as before (17 tests that need upstream fixture files not
 shipped in the crates.io package fail with and without the patch).
 
+## Scans with a few typed lines on top (`leafmind-scan-with-typed-lines.patch`)
+
+A scanned page with a few lines typed over it in a word processor — a certificate or form with a phone number,
+email, name and date added — was classified as text (`TextBased`, no page needing OCR), so only the typed
+lines were read and the scanned body was lost. pdf-inspector's scan rule wants at most one image (a scan with
+a logo or stamp image has more) and almost no or barely varied text (typed lines are varied, and a few lines
+in several fonts clear the 10-operator floor).
+
+- `src/detector/content_scan.rs`: the executed content scan also counts the bytes of text painted in a visible
+  render mode (not 3 or 7), `visible_text_bytes`.
+- `src/detector.rs`: new rule `sparse_text_over_covering_image` — drawn images cover at least half of the page
+  and it shows under 200 bytes of visible text (not for a page with an invisible text layer, which has its own
+  reason, or with form content left unread past the byte budget). Applied in the three places that decide
+  OCR: the template-image count of classification, the per-page routing of `Mixed` documents, and
+  `page_ocr_signals` for per-page extraction. Two tests added: a scan with ten typed lines (103 bytes) goes to
+  OCR, and a real text page over the same image (12 body lines) stays native.
+
+Measured: a real certificate scan (3 images, 6 typed lines, 85 bytes) went from `TextBased` to
+`Mixed` with its page needing OCR; pdf-inspector's own letterhead test (12 lines, about 480 bytes) stays
+native; the crate's tests pass as before (same 17 fixture failures).
+
 ## Removed from the copy (not needed to build)
 
 `target/`, `Cargo.lock`, the Python stub `pdf_inspector.pyi` and the crates.io packaging markers.
 
 ## Updating
 
-Take the new version's source from crates.io, apply `leafmind-keep-zwnj.patch` and
-`leafmind-form-field-strings.patch` (`patch -p1` inside this folder), keep this file, and re-run the ZWNJ
-check and the form-field test. Drop a patch once upstream fixes the same thing itself.
+Take the new version's source from crates.io, apply `leafmind-keep-zwnj.patch`,
+`leafmind-form-field-strings.patch` and `leafmind-scan-with-typed-lines.patch` (`patch -p1` inside this
+folder), keep this file, and re-run the ZWNJ check, the form-field test and the typed-lines tests. Drop a patch once upstream fixes the same thing itself.

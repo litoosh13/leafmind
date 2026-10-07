@@ -30,8 +30,9 @@
   `e22dc125a533d212c847c8c85e4fcb7358f4384869ef76b2b8721f039b1b633a`.
 - **Licence:** MIT (`third_party/pdf-inspector/LICENSE`); CMap tables © Adobe Systems, BSD-style licence in
   `third_party/pdf-inspector/external/bcmaps/LICENSE`.
-- **Changes:** keeps the zero-width non-joiner inside Persian/Arabic-script and Indic words — see
-  `third_party/pdf-inspector/LEAFMIND_PATCH.md` and `leafmind-keep-zwnj.patch`.
+- **Changes:** keeps the zero-width non-joiner inside Persian/Arabic-script and Indic words; decodes form-field
+  names and values as PDF text strings; sends scans with a few typed lines on top to OCR — see
+  `third_party/pdf-inspector/LEAFMIND_PATCH.md` and its three `.patch` files.
 
 ## Question-answering models (not in the repository; `scripts/fetch-qa-models.sh` downloads them)
 

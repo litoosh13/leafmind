@@ -312,6 +312,7 @@ pub(crate) fn detect_from_document(
             if (analysis.has_template_image
                 && (analysis.image_count <= 1 && analysis.text_operator_count < 50 && alphanum_ok))
                 || analysis.has_invisible_text_layer
+                || sparse_text_over_covering_image(&analysis)
             {
                 pages_with_template_images += 1;
             }
@@ -463,6 +464,7 @@ pub(crate) fn detect_from_document(
                     || analysis.has_vector_text
                     || analysis.has_invisible_text_layer
                     || sparse_text_over_scan
+                    || sparse_text_over_covering_image(&analysis)
                     || (analysis.text_operator_count < config.min_text_ops_per_page
                         && analysis.has_images)
                 {
@@ -625,6 +627,8 @@ struct PageAnalysis {
     /// run under text render mode 3 (invisible), or under mode 7 (clip
     /// only) with nothing painted through the clip.
     invisible_text_operator_count: u32,
+    /// Bytes of text the page paints in a visible render mode. (leafmind patch.)
+    visible_text_bytes: usize,
     has_images: bool,
     /// Whether page has a large background/template image (>50% coverage)
     has_template_image: bool,
@@ -867,6 +871,24 @@ fn resolve_with_shadowing(
 }
 
 /// Analyze a page's content stream for text operators and images
+/// A page whose drawn images cover at least half of it but which shows
+/// under 200 bytes of visible text (a few short lines) is a scan with some
+/// native lines on top — a typed date, name or address added over a scanned
+/// form or certificate, often beside a logo or stamp image. Its body is in
+/// the raster: `looks_like_scan` misses it, since the extra images break
+/// `image_count <= 1` and the typed lines are diverse, decodable text, and
+/// a few lines in several fonts can clear the text-operator floor. A text
+/// page over a background image shows far more text. Not for a page with an
+/// invisible text layer (its own reason) or with form content left unread
+/// past the byte budget (its text cannot be counted; the page keeps its
+/// classification). (leafmind patch.)
+fn sparse_text_over_covering_image(analysis: &PageAnalysis) -> bool {
+    analysis.has_covering_image
+        && !analysis.has_invisible_text_layer
+        && !analysis.form_bytes_exceeded
+        && analysis.visible_text_bytes < 200
+}
+
 fn analyze_page_content(doc: &Document, page_id: ObjectId) -> PageAnalysis {
     let mut counts = ContentCounts::default();
     let mut all_unique_chars: HashSet<u8> = HashSet::new();
@@ -1011,6 +1033,7 @@ fn analyze_page_content(doc: &Document, page_id: ObjectId) -> PageAnalysis {
         text_operator_count: text_ops,
         executed_text_operator_count: executed_text_ops,
         invisible_text_operator_count: hidden_text_ops,
+        visible_text_bytes: executed.visible_text_bytes,
         has_images,
         has_template_image,
         has_covering_image,
@@ -2251,7 +2274,7 @@ pub(crate) fn page_ocr_signals(doc: &Document, page_id: ObjectId) -> PageOcrSign
         let insufficient_text =
             analysis.text_operator_count < DetectionConfig::default().min_text_ops_per_page.max(10);
         looks_like_scan || insufficient_text
-    };
+    } || sparse_text_over_covering_image(&analysis);
 
     PageOcrSignals {
         template_image_needs_ocr: needs_ocr_for_template_image,
@@ -3665,6 +3688,26 @@ mod tests {
             !needs_ocr,
             "a text page with a background image must stay native"
         );
+    }
+
+    #[test]
+    fn test_scan_with_a_few_typed_lines_needs_ocr() {
+        // leafmind patch: a scanned certificate with a few short lines typed
+        // over it (phone, email, name, date) clears the text-operator floor
+        // and its text is diverse, yet the body is in the raster.
+        let lines = [
+            "Tel 0301 234567", "info@example.org", "Example City", "example.org",
+            "Alex Example", "05/09/2026", "No 4711", "Dept B", "Room 12", "Ref A-7",
+        ];
+        let (doc, page_id) = masthead_scan_page(&lines);
+        let analysis = analyze_page_content(&doc, page_id);
+        assert!(analysis.has_covering_image, "sanity: the scan covers the page");
+        assert!(
+            analysis.text_operator_count >= 10 && analysis.unique_alphanum_chars >= 10,
+            "sanity: neither the operator floor nor alphanum_low catches it"
+        );
+        assert!(analysis.visible_text_bytes < 200, "{}", analysis.visible_text_bytes);
+        assert!(page_ocr_signals(&doc, page_id).template_image_needs_ocr);
     }
 
     // ---------- P2 tests: Form XObject font traversal ----------

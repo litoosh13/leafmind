@@ -1542,3 +1542,45 @@ fn an_invoked_form_counts_once_as_bound_and_once_per_invocation_as_executed() {
         );
     }
 }
+
+#[test]
+fn a_scan_with_a_few_typed_lines_is_routed_to_ocr() {
+    // leafmind patch: a covering scan with ten short typed lines (phone,
+    // email, name, date — 103 bytes) clears the text-operator floor with
+    // diverse text, yet the page's body is in the raster.
+    let (mut doc, page_id, content_id) = synthetic_page(true, false, &[]);
+    let typed = [
+        "Tel 0301 234567", "info@example.org", "Example City", "example.org", "Alex Example",
+        "05/09/2026", "No 4711", "Dept B", "Room 12", "Ref A-7",
+    ];
+    let lines = |texts: &[&str]| -> String {
+        texts
+            .iter()
+            .enumerate()
+            .map(|(n, t)| format!("BT /F1 12 Tf 72 {} Td ({t}) Tj ET\n", 720 - 16 * n))
+            .collect()
+    };
+    set_page_content(&mut doc, content_id, &format!("{FULL_PAGE_IMAGE}{}", lines(&typed)));
+    let analysis = analyze_page_content(&doc, page_id);
+    assert!(analysis.has_covering_image);
+    assert_eq!(analysis.text_operator_count, 10);
+    assert_eq!(analysis.visible_text_bytes, 103);
+    let detected = detect_from_document(&doc, 1, &DetectionConfig::default()).unwrap();
+    assert_eq!(detected.pages_needing_ocr, vec![1]);
+
+    // The same lines under an invisible render mode are a hidden OCR layer:
+    // no visible text, routed by that reason instead.
+    let hidden = format!("{FULL_PAGE_IMAGE}3 Tr\n{}", lines(&typed).replace("BT ", "BT 3 Tr "));
+    set_page_content(&mut doc, content_id, &hidden);
+    assert_eq!(analyze_page_content(&doc, page_id).visible_text_bytes, 0);
+
+    // A real text page over the same image shows far more text and stays
+    // native.
+    let body: Vec<String> = (0..12).map(|n| format!("Paragraph line {n} of ordinary body text")).collect();
+    let body: Vec<&str> = body.iter().map(String::as_str).collect();
+    set_page_content(&mut doc, content_id, &format!("{FULL_PAGE_IMAGE}{}", lines(&body)));
+    let analysis = analyze_page_content(&doc, page_id);
+    assert!(analysis.has_covering_image && analysis.visible_text_bytes >= 200);
+    let detected = detect_from_document(&doc, 1, &DetectionConfig::default()).unwrap();
+    assert!(detected.pages_needing_ocr.is_empty(), "{:?}", detected.pdf_type);
+}

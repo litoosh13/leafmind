@@ -40,6 +40,9 @@ pub(super) struct ExecutedContent {
     /// Those of `text_ops` that left nothing to see: run under text render
     /// mode 3, or under mode 7 with nothing painted where its glyphs lie.
     pub(super) hidden_text_ops: u32,
+    /// Bytes of text painted in a visible render mode (not 3 or 7): how much
+    /// text the page shows. (leafmind patch.)
+    pub(super) visible_text_bytes: usize,
     /// Whether an image draw — an image XObject, an inline image or a
     /// path painted with a tiling pattern that draws one — landed within
     /// the clip in force: the page shows an image, whatever its resources
@@ -350,6 +353,8 @@ struct ContentScanState<'a> {
     /// Those of `executed_text_ops` that left nothing to see: mode 3, or
     /// mode 7 with nothing painted through its clip.
     executed_hidden_text_ops: u32,
+    /// Bytes those of `executed_text_ops` showed in a visible mode.
+    executed_visible_text_bytes: usize,
     /// The grid cells whose centres an image draw covered, one bit per
     /// cell, a row per word.
     covered_cells: [u64; COVERAGE_GRID],
@@ -415,6 +420,7 @@ impl<'a> ContentScanState<'a> {
             stack_floor: 0,
             executed_text_ops: 0,
             executed_hidden_text_ops: 0,
+            executed_visible_text_bytes: 0,
             covered_cells: [0; COVERAGE_GRID],
             own_image_area: 0.0,
             active_forms: Vec::new(),
@@ -552,6 +558,9 @@ impl<'a> ContentScanState<'a> {
     /// all.
     fn text_shown(&mut self, bytes: usize) {
         self.executed_text_ops += 1;
+        if !matches!(self.render_mode, 3 | 7) {
+            self.executed_visible_text_bytes += bytes;
+        }
         match self.render_mode {
             3 => self.executed_hidden_text_ops += 1,
             7 => {
@@ -997,6 +1006,7 @@ impl<'a> ContentScanState<'a> {
         ExecutedContent {
             text_ops: self.executed_text_ops,
             hidden_text_ops: self.executed_hidden_text_ops,
+            visible_text_bytes: self.executed_visible_text_bytes,
             draws_image: self.drew_image_on_page,
             covers_page: self.covers_page(),
             shows_only_a_hidden_text_layer: self.shows_only_a_hidden_text_layer(),
