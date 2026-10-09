@@ -10,9 +10,17 @@ static AMENDMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)amend|nachtrag|änderung|ab dem|with effect|effective|الحاقیه|اصلاحیه|ملحق|اعتباراً|تعديل").unwrap()
 });
 
-/// A sentence piece ending like this is an abbreviation or an ordinal ("Nr.", "1."), not a sentence end.
+/// A sentence piece ending like this is an abbreviation, an initial or an ordinal ("Nr.", "Silas B.", "e.g.",
+/// "z. B.", "1."), not a sentence end. Words that often end a sentence ("etc.", "usw.", "Inc.") are not listed.
 static ABBREVIATION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:\b(?:No|Nr|Abs|bzw|ca|Dr|Art|z\.B|u\.a|d\.h)\.|\b\d+\.)$").unwrap()
+    Regex::new(concat!(
+        r"(?:\b(?:No|Nr|Abs|Art|bzw|ca|Dr|Prof|Mr|Mrs|Ms|St|Jr|Sr|vs|Vol|Fig|Figs|Eq|Ref|Refs|al|approx",
+        r"|Abb|Kap|vgl|evtl|ggf|inkl|zzgl|Tel|Str|Mio|Mrd|Tsd|Jh)\.",
+        // A single letter: initials, and the last letter of "e.g.", "i.e.", "z. B.", "d. h.", "u. a."
+        r"|\b\p{L}\.",
+        r"|\b\d+\.)$"
+    ))
+    .unwrap()
 });
 
 /// Symbols that start a list item when they stand alone between spaces: common bullets, and the letters
@@ -715,6 +723,49 @@ mod tests {
                 "Siehe Nr. 4 der Anlage."
             ]
         );
+    }
+
+    #[test]
+    fn sentences_keep_initials_and_common_abbreviations() {
+        // Seen in the broad benchmark (2026-10-08): answers cut off after an initial or abbreviation.
+        for (text, want) in [
+            (
+                "The campus was financed by Silas B. Cobb and others. It opened in 1892.",
+                vec![
+                    "The campus was financed by Silas B. Cobb and others.",
+                    "It opened in 1892.",
+                ],
+            ),
+            (
+                "Hutton published his ideas in 1795 (Vol. 1 and 2). They were read widely.",
+                vec![
+                    "Hutton published his ideas in 1795 (Vol. 1 and 2).",
+                    "They were read widely.",
+                ],
+            ),
+            (
+                "Two bosons (e.g. photons) behave alike, as Schuenemann et al. showed. See Fig. 3.",
+                vec![
+                    "Two bosons (e.g. photons) behave alike, as Schuenemann et al. showed.",
+                    "See Fig. 3.",
+                ],
+            ),
+            (
+                "Es gibt Ausnahmen, z. B. für Kinder. Die Kosten betragen 5 Mio. Euro. Fertig.",
+                vec![
+                    "Es gibt Ausnahmen, z. B. für Kinder.",
+                    "Die Kosten betragen 5 Mio. Euro.",
+                    "Fertig.",
+                ],
+            ),
+            // Words that usually end a sentence still end it.
+            (
+                "We sell apples, pears etc. Delivery is free.",
+                vec!["We sell apples, pears etc.", "Delivery is free."],
+            ),
+        ] {
+            assert_eq!(sentences_of(text), want, "{text}");
+        }
     }
 
     #[test]
