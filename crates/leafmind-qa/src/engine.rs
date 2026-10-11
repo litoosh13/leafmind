@@ -44,6 +44,11 @@ pub struct QaOptions {
     /// Below this reranker score the answer is withheld ([`Answer::NotFound`]); the best cutoff for both
     /// modes on the benchmark.
     pub min_confidence: f64,
+    /// Fast mode also withholds the answer when another sentence scores almost as high: the answer's score must
+    /// beat the best sentence outside the answer by at least this much. 0.15 cut the wrong answers shown on a
+    /// broad public benchmark (14 sets, 4 languages) from 666 to 98 and kept 1,433 of 2,083 right ones; lower it
+    /// (0.1, 0.05, 0) for more answers and more wrong ones. Not used by accurate mode.
+    pub min_gap: f64,
     /// How the document is cut into search chunks.
     pub chunking: Chunking,
 }
@@ -53,6 +58,7 @@ impl Default for QaOptions {
         QaOptions {
             threads: 0,
             min_confidence: 0.5,
+            min_gap: 0.15,
             chunking: Chunking::Paragraph,
         }
     }
@@ -87,7 +93,8 @@ pub enum Answer {
         sentences: Vec<Passage>,
         confidence: f64,
     },
-    /// No sentence scored high enough: the answer is withheld rather than guessed.
+    /// No sentence scored high enough, or (fast mode) another sentence scored almost as high: the answer is
+    /// withheld rather than guessed.
     NotFound { best_confidence: f64 },
     /// The question is clearly in another language than the document: ask again in the document's language.
     WrongLanguage {
@@ -353,7 +360,8 @@ impl QaEngine {
         }
         let picked = search::pick(&scores, &sentences);
         let confidence = picked.first().map_or(0.0, |&i| scores[i]);
-        Ok(if confidence >= self.options.min_confidence {
+        let clear = accurate || search::gap(&scores, &picked, &sentences) >= self.options.min_gap;
+        Ok(if confidence >= self.options.min_confidence && clear {
             Answer::Found {
                 sentences: picked.iter().map(|&i| sentences[i].clone()).collect(),
                 confidence,

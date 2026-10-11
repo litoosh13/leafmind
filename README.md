@@ -31,9 +31,9 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.2" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.2" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.3.2" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -118,6 +118,15 @@ match qa.ask(&doc, "When does the contract end?")? {
 
 Load the engine once at start (it takes about 1.5 GB of memory; 3.5 GB with accurate mode). `ask_accurate`
 works the same way. `sentences` can hold more than one: the answer, then amendments that change it.
+
+Fast mode says "not in the document" rather than guess: when the best sentence scores below
+`QaOptions::min_confidence` (0.5), or when another sentence scores almost as high (`min_gap`, 0.15). On a broad
+public benchmark this keeps about 1 in 15 shown answers wrong instead of 1 in 4; lower `min_gap` to show more
+answers and accept more wrong ones:
+
+```rust
+let qa = QaEngine::load(&models, QaOptions { min_gap: 0.1, ..Default::default() })?;
+```
 
 To skip indexing when a document is opened again, keep its index as bytes (about 3 KB per chunk) and load it
 next time. Loading refuses bytes that are damaged, from another leafmind format, or made with another embedder

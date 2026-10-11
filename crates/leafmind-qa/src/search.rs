@@ -138,6 +138,20 @@ pub fn pick(scores: &[f64], sentences: &[Passage]) -> Vec<usize> {
     std::iter::once(best).chain(amendments).collect()
 }
 
+/// How far the answer's best score is ahead of the best sentence that is not part of the answer (`picked`, from
+/// [`pick`]; its amendments count as the answer). 1 when no other sentence scored, and when the answer is led by
+/// an amendment: the clause it changes naturally scores close behind it (11 of 4,189 benchmark questions).
+pub fn gap(scores: &[f64], picked: &[usize], sentences: &[Passage]) -> f64 {
+    let Some(&best) = picked.first() else {
+        return 0.0;
+    };
+    if is_amendment(&sentences[best].text) {
+        return 1.0;
+    }
+    let runner_up = order(scores).into_iter().find(|i| !picked.contains(i));
+    runner_up.map_or(1.0, |i| scores[best] - scores[i])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +210,26 @@ mod tests {
         ];
         assert_eq!(pick(&[0.9, 0.5, 0.1, 0.2], &sents), [0, 1]);
         assert_eq!(pick(&[], &[]), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn gap_skips_the_answers_own_amendments() {
+        let s = |t: &str| Passage {
+            page: 1,
+            text: t.into(),
+            section: None,
+        };
+        let sents = [
+            s("The rent is 500 Euro."),
+            s("Amendment 1: with effect from May the rent is 450 Euro."),
+            s("Parking costs 40 Euro."),
+            s("The garden is shared."),
+        ];
+        let scores = [0.9, 0.85, 0.3, 0.6];
+        assert!((gap(&scores, &[0, 1], &sents) - 0.3).abs() < 1e-9); // the answer's amendment is not a rival
+        assert!((gap(&[0.9, 0.2, 0.85, 0.1], &[0], &sents) - 0.05).abs() < 1e-9); // a close rival: unsure
+        assert_eq!(gap(&[0.62, 0.71, 0.1, 0.1], &[1], &sents), 1.0); // led by an amendment
+        assert_eq!(gap(&[0.7], &[0], &sents), 1.0);
+        assert_eq!(gap(&[], &[], &[]), 0.0);
     }
 }
