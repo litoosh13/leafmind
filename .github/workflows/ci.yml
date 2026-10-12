@@ -65,7 +65,7 @@ jobs:
           path: dist/tesseract-macos
 
   # The tests that are skipped by default: OCR with the real Tesseract, and question answering with the real
-  # models (fast and accurate mode) on ONNX Runtime 1.30, on Linux x86.
+  # models on ONNX Runtime 1.30, on Linux x86.
   models:
     runs-on: ubuntu-latest
     steps:
@@ -80,7 +80,7 @@ jobs:
         with:
           path: models/tessdata
           key: tessdata-${{ hashFiles('scripts/fetch-tessdata.sh') }}
-      - run: scripts/fetch-qa-models.sh models/qa accurate
+      - run: scripts/fetch-qa-models.sh models/qa
       - run: scripts/fetch-tessdata.sh models/tessdata
       - name: ONNX Runtime 1.30
         run: |

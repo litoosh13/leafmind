@@ -60,22 +60,6 @@ their own, so the originals' licence applies: **Apache License 2.0** (text:
     `ccf51dba7f8aa9205753761cfaa68c55f741792501463a3bf25d7e5bcdac7c35`
   - `tokenizer.json` — `3ffb37461c391f096759f4a9bbbc329da0f36952f88bab061fcf84940c022e98`
 
-### qwen3-reranker — Qwen3-Reranker-0.6B (optional, accurate mode)
-
-- **Original:** https://huggingface.co/Qwen/Qwen3-Reranker-0.6B (Apache-2.0), by the Qwen team (Alibaba Cloud).
-- **Exported from** the original revision `e61197ed45024b0ed8a2d74b80b4d909f1255473` (`model.safetensors`
-  `27cd75a405b9c1b46b59abfd88aaa209e6fed2a1972cde9b70e7659537c5e65b`). Changes: the unchanged float32 weights in
-  an ONNX graph that takes `input_ids` only and returns only the "yes" and "no" logits at the last position
-  (`yes_no`); the export script and a description are in the repository below.
-- **Files:** https://huggingface.co/litoo13/leafmind-qwen3-reranker-0.6b (Apache-2.0), revision
-  `18f5fcc209837acaf0f702b03006220af73cb623`:
-  - `model.onnx` (4,126,878 bytes) — `ec9d799e3a241bf06a5ceb0a1efb7d4a1645c19bd57ceed81ce89af4de2dde3b`
-  - `model.onnx.data` (weights, 2,383,171,584 bytes) —
-    `22ab01e5d02189a8a4eac7f9da1ac027ad8f064635390da8797269f805399dda`
-  - `tokenizer.json` (unchanged from the original) —
-    `aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4`
-- Used with the prompt and yes/no scoring from the original model card.
-
 ### ONNX Runtime (shipped by the app)
 
 - The models run on ONNX Runtime 1.30 (https://github.com/microsoft/onnxruntime, MIT), loaded at run time

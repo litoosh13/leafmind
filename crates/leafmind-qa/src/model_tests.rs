@@ -3,10 +3,9 @@
 //! Arabic-script font). Numbers are checked exactly as the document writes them.
 //!
 //! Run: `LEAFMIND_QA_MODELS=<dir with gte-embed/ and gte-reranker/> LEAFMIND_ORT=<onnxruntime library>
-//! cargo test -p leafmind-qa --release -- --ignored` (models: scripts/fetch-qa-models.sh). If the folder also
-//! has `qwen3-reranker/` (`scripts/fetch-qa-models.sh <dir> accurate`), every check also runs in accurate mode.
+//! cargo test -p leafmind-qa --release -- --ignored` (models: scripts/fetch-qa-models.sh).
 //!
-//! On an Apple M4 the correct answers score 0.57–0.95 (fast mode) against the 0.5 cutoff. x86 PCs scored the
+//! On an Apple M4 the correct answers score 0.57–0.95 against the 0.5 cutoff. x86 PCs scored the
 //! same int8 models up to 0.18 lower in earlier tests; 0.5 was still the best cutoff on an office PC.
 
 use crate::{Answer, Document, Language, QaEngine, QaModels, QaOptions};
@@ -18,24 +17,17 @@ fn engine() -> &'static QaEngine {
         let dir = std::path::PathBuf::from(
             std::env::var("LEAFMIND_QA_MODELS").expect("LEAFMIND_QA_MODELS"),
         );
-        let accurate = dir.join("qwen3-reranker");
         let models = QaModels {
             onnxruntime: std::env::var("LEAFMIND_ORT").expect("LEAFMIND_ORT").into(),
             embedder: dir.join("gte-embed"),
             reranker: dir.join("gte-reranker"),
-            accurate_reranker: accurate.exists().then_some(accurate),
         };
         QaEngine::load(&models, QaOptions::default()).unwrap()
     })
 }
 
-/// Fast mode, and accurate mode when its model is there.
 fn answers(doc: &Document, question: &str) -> Vec<(&'static str, Answer)> {
-    let mut out = vec![("fast", engine().ask(doc, question).unwrap())];
-    if let Ok(answer) = engine().ask_accurate(doc, question) {
-        out.push(("accurate", answer));
-    }
-    out
+    vec![("fast", engine().ask(doc, question).unwrap())]
 }
 
 /// The answer must be found and one of its sentences must contain `expected`.
@@ -221,7 +213,7 @@ fn a_saved_document_answers_the_same() {
         "What colour is the club house?",
         "Wie hoch ist die jährliche Pacht?",
     ] {
-        // Same answers, sentences and confidences, in both modes.
+        // Same answers, sentences and confidences.
         assert_eq!(
             answers(&loaded, question),
             answers(&doc, question),

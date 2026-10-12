@@ -16,8 +16,7 @@ It is in early development.
   filled scan natively, 340 ms in the browser.
 - **`leafmind-qa`** — answers a question about a PDF by **picking the sentence that answers it**, so numbers
   and wording are the document's own; otherwise it says the answer is not in the document. English, German,
-  Persian and Arabic. Fast mode about 0.15 s per question; the optional accurate mode about 1 s (Apple M4)
-  and finds clearly more answers in real documents.
+  Persian and Arabic. About 0.15 s per question.
 - **`leafmind-ocr`** — reads scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract) 5 in
   the same four languages, detects the page's language, and returns paragraphs ready for `leafmind-qa`. On
   office-quality scans: 0.0 % wrong characters in English and German, about 4 % in Persian and Arabic.
@@ -31,9 +30,9 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.4.0" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -44,7 +43,7 @@ libraries below and tells leafmind where they are.
 | Part | Your app ships | Where to get it |
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
-| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 680 MB); optionally `qwen3-reranker/` for accurate mode (2.4 GB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir> [accurate]` |
+| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 680 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
@@ -99,7 +98,6 @@ let qa = QaEngine::load(
         onnxruntime: "libs/libonnxruntime.dylib".into(), // onnxruntime.dll, libonnxruntime.so
         embedder: "models/qa/gte-embed".into(),
         reranker: "models/qa/gte-reranker".into(),
-        accurate_reranker: None, // or Some("models/qa/qwen3-reranker".into()) for ask_accurate
     },
     QaOptions::default(),
 )?;
@@ -116,10 +114,10 @@ match qa.ask(&doc, "When does the contract end?")? {
 }
 ```
 
-Load the engine once at start (it takes about 1.5 GB of memory; 3.5 GB with accurate mode). `ask_accurate`
-works the same way. `sentences` can hold more than one: the answer, then amendments that change it.
+Load the engine once at start (it takes about 1.5 GB of memory). `sentences` can hold more than one: the answer,
+then amendments that change it.
 
-Fast mode says "not in the document" rather than guess: when the best sentence scores below
+leafmind-qa says "not in the document" rather than guess: when the best sentence scores below
 `QaOptions::min_confidence` (0.5), or when another sentence scores almost as high (`min_gap`, 0.15). On a broad
 public benchmark this keeps about 1 in 15 shown answers wrong instead of 1 in 4; lower `min_gap` to show more
 answers and accept more wrong ones:
@@ -183,7 +181,7 @@ The question-answering tests with the real models are skipped by default. To run
 (about 680 MB) and point the tests at them and at an ONNX Runtime 1.30 library:
 
 ```bash
-scripts/fetch-qa-models.sh models/qa            # add "accurate" for accurate mode's model (2.4 GB)
+scripts/fetch-qa-models.sh models/qa
 LEAFMIND_QA_MODELS=$PWD/models/qa LEAFMIND_ORT=/path/to/libonnxruntime.dylib \
     cargo test -p leafmind-qa --release -- --ignored
 ```

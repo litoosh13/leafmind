@@ -2,7 +2,6 @@
 //! gte-multilingual-reranker-base scores (question, sentence) pairs. Both run on ONNX Runtime, which the app
 //! ships and names by path.
 
-use crate::accurate::Accurate;
 use crate::language::{Language, LanguageCheck};
 use crate::saved;
 use crate::search::{self, Bm25};
@@ -16,9 +15,6 @@ use tokenizers::{PaddingParams, Tokenizer, TruncationParams};
 
 /// How many best chunks are split into sentences for the reranker.
 const TOP_CHUNKS: usize = 8;
-/// In accurate mode, how many of the gte reranker's best sentences the accurate reranker sees. On the benchmark
-/// more candidates changed no answer, only the time; fewer (8, 6, 4) lost answers in real documents.
-const ACCURATE_SHORTLIST: usize = 12;
 /// Longest input the models see, in tokens.
 const MAX_TOKENS: usize = 512;
 
@@ -32,22 +28,18 @@ pub struct QaModels {
     pub embedder: PathBuf,
     /// gte-multilingual-reranker-base (picks the answer sentence).
     pub reranker: PathBuf,
-    /// Optional, for [`QaEngine::ask_accurate`]: leafmind's export of Qwen3-Reranker-0.6B (`model.onnx`,
-    /// `model.onnx.data`, `tokenizer.json`).
-    pub accurate_reranker: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct QaOptions {
     /// CPU threads per model; 0 = half the logical CPUs (about the physical cores).
     pub threads: usize,
-    /// Below this reranker score the answer is withheld ([`Answer::NotFound`]); the best cutoff for both
-    /// modes on the benchmark.
+    /// Below this reranker score the answer is withheld ([`Answer::NotFound`]).
     pub min_confidence: f64,
-    /// Fast mode also withholds the answer when another sentence scores almost as high: the answer's score must
+    /// The answer is also withheld when another sentence scores almost as high: the answer's score must
     /// beat the best sentence outside the answer by at least this much. 0.15 cut the wrong answers shown on a
     /// broad public benchmark (14 sets, 4 languages) from 666 to 98 and kept 1,433 of 2,083 right ones; lower it
-    /// (0.1, 0.05, 0) for more answers and more wrong ones. Not used by accurate mode.
+    /// (0.1, 0.05, 0) for more answers and more wrong ones.
     pub min_gap: f64,
     /// How the document is cut into search chunks.
     pub chunking: Chunking,
@@ -93,8 +85,8 @@ pub enum Answer {
         sentences: Vec<Passage>,
         confidence: f64,
     },
-    /// No sentence scored high enough, or (fast mode) another sentence scored almost as high: the answer is
-    /// withheld rather than guessed.
+    /// No sentence scored high enough, or another sentence scored almost as high: the answer is withheld rather
+    /// than guessed.
     NotFound { best_confidence: f64 },
     /// The question is clearly in another language than the document: ask again in the document's language.
     WrongLanguage {
@@ -218,7 +210,6 @@ impl Model {
 pub struct QaEngine {
     embedder: Model,
     reranker: Model,
-    accurate: Option<Accurate>,
     language: LanguageCheck,
     options: QaOptions,
     /// Of the embedder's model and tokenizer files: saved documents must come from the same ones.
@@ -239,10 +230,6 @@ impl QaEngine {
         Ok(QaEngine {
             embedder: Model::load(&models.embedder, threads)?,
             reranker: Model::load(&models.reranker, threads)?,
-            accurate: match &models.accurate_reranker {
-                Some(dir) => Some(Accurate::load(dir, threads)?),
-                None => None,
-            },
             language: LanguageCheck::new(),
             options,
             embedder_fingerprint: saved::fingerprint(&[
@@ -300,26 +287,8 @@ impl QaEngine {
         })
     }
 
-    /// Finds the sentence of `doc` that answers `question`, or withholds the answer. Fast: about 0.1–0.25 s on
-    /// a CPU.
+    /// Finds the sentence of `doc` that answers `question`, or withholds the answer. About 0.1–0.25 s on a CPU.
     pub fn ask(&self, doc: &Document, question: &str) -> Result<Answer, Error> {
-        self.answer(doc, question, false)
-    }
-
-    /// Like [`Self::ask`], but a second, larger reranker (Qwen3-Reranker-0.6B, `QaModels::accurate_reranker`)
-    /// picks among the gte reranker's 12 best sentences. It finds clearly more answers in real documents and
-    /// paraphrased questions, at about 1 s (Apple M4) to 4 s (x86 office PC) more per question. It sees each sentence with the heading of its section, which helps it tell apart
-    /// look-alike rules of different sections. Error if the model was not loaded.
-    pub fn ask_accurate(&self, doc: &Document, question: &str) -> Result<Answer, Error> {
-        if self.accurate.is_none() {
-            return Err(Error::Model(
-                "accurate mode needs QaModels::accurate_reranker".into(),
-            ));
-        }
-        self.answer(doc, question, true)
-    }
-
-    fn answer(&self, doc: &Document, question: &str, accurate: bool) -> Result<Answer, Error> {
         if let Some(document) = doc.language
             && let Some(question) = self.language.refuse(document, question)
         {
@@ -348,19 +317,11 @@ impl QaEngine {
             .take(TOP_CHUNKS)
             .map(|i| &doc.chunks[i])
             .collect();
-        let mut sentences = text::sentences(&top);
-        let mut scores = self.reranker.rerank(question, &sentences)?;
-        if let (true, Some(accurate)) = (accurate, &self.accurate) {
-            // The accurate reranker judges the gte reranker's shortlist, kept in document order.
-            let mut shortlist = search::order(&scores);
-            shortlist.truncate(ACCURATE_SHORTLIST);
-            shortlist.sort_unstable();
-            sentences = shortlist.iter().map(|&i| sentences[i].clone()).collect();
-            scores = accurate.score(question, &sentences)?;
-        }
+        let sentences = text::sentences(&top);
+        let scores = self.reranker.rerank(question, &sentences)?;
         let picked = search::pick(&scores, &sentences);
         let confidence = picked.first().map_or(0.0, |&i| scores[i]);
-        let clear = accurate || search::gap(&scores, &picked, &sentences) >= self.options.min_gap;
+        let clear = search::gap(&scores, &picked, &sentences) >= self.options.min_gap;
         Ok(if confidence >= self.options.min_confidence && clear {
             Answer::Found {
                 sentences: picked.iter().map(|&i| sentences[i].clone()).collect(),

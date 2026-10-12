@@ -4,7 +4,8 @@
 //! The pipeline (in progress): PDF text → paragraphs ([`text::chunks`]) → keyword search ([`search::Bm25`]) plus
 //! embedding search, merged by reciprocal rank fusion ([`search::rrf`]) → the best paragraphs' sentences
 //! ([`text::sentences`]) → a reranker scores each sentence → [`search::pick`] keeps the best one (and amendments
-//! that change it). If the best score is too low the answer is withheld instead of guessed.
+//! that change it). If the best score is too low, or another sentence scores almost as high, the answer is
+//! withheld instead of guessed.
 //!
 //! ```no_run
 //! use leafmind_qa::{Answer, QaEngine, QaModels, QaOptions};
@@ -13,12 +14,10 @@
 //!         onnxruntime: "lib/libonnxruntime.dylib".into(),
 //!         embedder: "models/gte-embed".into(),
 //!         reranker: "models/gte-reranker".into(),
-//!         accurate_reranker: Some("models/qwen3-reranker".into()), // optional, for ask_accurate
 //!     },
 //!     QaOptions::default(),
 //! )?;
 //! let doc = engine.index_pdf(&std::fs::read("contract.pdf")?)?;
-//! // engine.ask_accurate(…) instead: slower, finds more answers (see QaEngine::ask_accurate).
 //! match engine.ask(&doc, "How much is the rent?")? {
 //!     Answer::Found { sentences, confidence } => println!("{sentences:?} ({confidence:.2})"),
 //!     Answer::NotFound { .. } => println!("not found in the document"),
@@ -29,7 +28,6 @@
 
 use std::fmt;
 
-mod accurate;
 mod engine;
 pub mod language;
 #[cfg(test)]
