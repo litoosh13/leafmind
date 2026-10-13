@@ -1,7 +1,7 @@
 #!/bin/sh
-# Downloads the two models leafmind-qa needs (about 680 MB) into <dir>/gte-embed and <dir>/gte-reranker, from
-# fixed Hugging Face revisions, and checks every file's SHA-256. Files already present with the right checksum are
-# not downloaded again. Sources and licences: THIRD_PARTY.md.
+# Downloads the two models leafmind-qa needs (about 345 MB; vocabulary pruned for English, German, Persian and
+# Arabic) into <dir>/gte-embed and <dir>/gte-reranker, from fixed Hugging Face revisions, and checks every file's
+# SHA-256. Files already present with the right checksum are not downloaded again. Sources and licences: THIRD_PARTY.md.
 # Usage: scripts/fetch-qa-models.sh <dir>
 set -eu
 dir=${1:?usage: $0 <dir>}
@@ -26,9 +26,9 @@ while read -r folder repo rev file sum name; do
     mv "$out.part" "$out"
     echo "ok: $out"
 done <<'LIST'
-gte-embed onnx-community/gte-multilingual-base 2edbf5e672aab465f9ed4c154a8b61791c082c69 onnx/model_int8.onnx ab2bd164ebd8ca9003dc49a981b611e849b5d326f504c8873ba76e07fa6c0082
-gte-embed onnx-community/gte-multilingual-base 2edbf5e672aab465f9ed4c154a8b61791c082c69 tokenizer.json 3a56def25aa40facc030ea8b0b87f3688e4b3c39eb8b45d5702b3a1300fe2a20
-gte-reranker onnx-community/gte-multilingual-reranker-base ee64367e35a2db0da46bb6497e13a18f8bd585cb onnx/model_int8.onnx ccf51dba7f8aa9205753761cfaa68c55f741792501463a3bf25d7e5bcdac7c35
-gte-reranker onnx-community/gte-multilingual-reranker-base ee64367e35a2db0da46bb6497e13a18f8bd585cb tokenizer.json 3ffb37461c391f096759f4a9bbbc329da0f36952f88bab061fcf84940c022e98
+gte-embed litoo13/leafmind-gte-multilingual-4lang 466fd26d9e751de3a57adc3ae222115865ca8cc4 gte-embed/model_int8.onnx 5668afdae8b748de54ef85b7a13a711005ccf2a7a08806159f78b30c5f722cbf
+gte-embed litoo13/leafmind-gte-multilingual-4lang 466fd26d9e751de3a57adc3ae222115865ca8cc4 gte-embed/tokenizer.json c1bafc0e9c74e6cefcd032df267ce8603c7a288a771e517d9c8823e0a7de8a37
+gte-reranker litoo13/leafmind-gte-multilingual-4lang 466fd26d9e751de3a57adc3ae222115865ca8cc4 gte-reranker/model_int8.onnx 4e58a5fd59990fd78afc8a509f27d4f799d8b8723ceea00e0a07fd6f316fb542
+gte-reranker litoo13/leafmind-gte-multilingual-4lang 466fd26d9e751de3a57adc3ae222115865ca8cc4 gte-reranker/tokenizer.json e26ac9905f59291e2540981b82ca2e1022e9699b2456324f66ddba4804272847
 LIST
 echo "done: $dir"

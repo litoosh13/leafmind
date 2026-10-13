@@ -36,29 +36,40 @@
 
 ## Question-answering models (not in the repository; `scripts/fetch-qa-models.sh` downloads them)
 
-`leafmind-qa` needs two models that the app ships next to it. The script fetches fixed revisions and checks
-these SHA-256 sums. Both are int8 ONNX conversions ("… with ONNX weights to be compatible with
-Transformers.js") by Hugging Face's onnx-community of Alibaba's models; the conversions state no licence of
-their own, so the originals' licence applies: **Apache License 2.0** (text:
+`leafmind-qa` needs two models that the app ships next to it. The script fetches them from
+https://huggingface.co/litoo13/leafmind-gte-multilingual-4lang, revision `466fd26d9e751de3a57adc3ae222115865ca8cc4`,
+and checks these SHA-256 sums. They are leafmind's vocabulary-pruned copies of the int8 ONNX conversions ("… with
+ONNX weights to be compatible with Transformers.js") by Hugging Face's onnx-community of Alibaba's models; the
+conversions state no licence of their own, so the originals' licence applies: **Apache License 2.0** (text:
 [models/LICENSE-APACHE-2.0](models/LICENSE-APACHE-2.0); the originals ship no NOTICE file). Checked 2026-09-27.
+**Changes (2026-10-13):** only two tables are cut, the network is unchanged: the word-embedding table keeps 72,928 of
+250,002 word pieces (special tokens, pieces without letters, Arabic-script, Greek and one-character pieces, and the
+Latin pieces English/German training text uses), each `tokenizer.json` keeps the same pieces with new ids, and the
+rotary position tables keep the first 1,024 of 65,536 positions. The repository's model card and `build/` scripts
+describe and reproduce it. On leafmind's broad benchmark (4,190 questions) the answers are as before (right 1,439 →
+1,444, wrong 102 → 103), at half the memory.
 
 ### gte-embed — gte-multilingual-base (search)
 
 - **Original:** https://huggingface.co/Alibaba-NLP/gte-multilingual-base (Apache-2.0), by Alibaba (Tongyi Lab).
-- **Files:** https://huggingface.co/onnx-community/gte-multilingual-base, revision
-  `2edbf5e672aab465f9ed4c154a8b61791c082c69`:
-  - `onnx/model_int8.onnx` (340,318,797 bytes) —
-    `ab2bd164ebd8ca9003dc49a981b611e849b5d326f504c8873ba76e07fa6c0082`
-  - `tokenizer.json` — `3a56def25aa40facc030ea8b0b87f3688e4b3c39eb8b45d5702b3a1300fe2a20`
+- **Converted from:** https://huggingface.co/onnx-community/gte-multilingual-base, revision
+  `2edbf5e672aab465f9ed4c154a8b61791c082c69` (`onnx/model_int8.onnx`
+  `ab2bd164ebd8ca9003dc49a981b611e849b5d326f504c8873ba76e07fa6c0082`, `tokenizer.json`
+  `3a56def25aa40facc030ea8b0b87f3688e4b3c39eb8b45d5702b3a1300fe2a20`).
+- **Files** (folder `gte-embed/`):
+  - `model_int8.onnx` (171,260,482 bytes) — `5668afdae8b748de54ef85b7a13a711005ccf2a7a08806159f78b30c5f722cbf`
+  - `tokenizer.json` — `c1bafc0e9c74e6cefcd032df267ce8603c7a288a771e517d9c8823e0a7de8a37`
 
 ### gte-reranker — gte-multilingual-reranker-base (picks the answer sentence)
 
 - **Original:** https://huggingface.co/Alibaba-NLP/gte-multilingual-reranker-base (Apache-2.0), by Alibaba.
-- **Files:** https://huggingface.co/onnx-community/gte-multilingual-reranker-base, revision
-  `ee64367e35a2db0da46bb6497e13a18f8bd585cb`:
-  - `onnx/model_int8.onnx` (340,858,200 bytes) —
-    `ccf51dba7f8aa9205753761cfaa68c55f741792501463a3bf25d7e5bcdac7c35`
-  - `tokenizer.json` — `3ffb37461c391f096759f4a9bbbc329da0f36952f88bab061fcf84940c022e98`
+- **Converted from:** https://huggingface.co/onnx-community/gte-multilingual-reranker-base, revision
+  `ee64367e35a2db0da46bb6497e13a18f8bd585cb` (`onnx/model_int8.onnx`
+  `ccf51dba7f8aa9205753761cfaa68c55f741792501463a3bf25d7e5bcdac7c35`, `tokenizer.json`
+  `3ffb37461c391f096759f4a9bbbc329da0f36952f88bab061fcf84940c022e98`).
+- **Files** (folder `gte-reranker/`):
+  - `model_int8.onnx` (171,799,885 bytes) — `4e58a5fd59990fd78afc8a509f27d4f799d8b8723ceea00e0a07fd6f316fb542`
+  - `tokenizer.json` — `e26ac9905f59291e2540981b82ca2e1022e9699b2456324f66ddba4804272847`
 
 ### ONNX Runtime (shipped by the app)
 

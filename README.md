@@ -43,7 +43,7 @@ libraries below and tells leafmind where they are.
 | Part | Your app ships | Where to get it |
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
-| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 680 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` |
+| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
@@ -114,8 +114,8 @@ match qa.ask(&doc, "When does the contract end?")? {
 }
 ```
 
-Load the engine once at start (it takes about 1.5 GB of memory). `sentences` can hold more than one: the answer,
-then amendments that change it.
+Load the engine once at start (it takes about 0.8 GB of memory, measured on an Apple M4). `sentences` can hold
+more than one: the answer, then amendments that change it.
 
 leafmind-qa says "not in the document" rather than guess: when the best sentence scores below
 `QaOptions::min_confidence` (0.5), or when another sentence scores almost as high (`min_gap`, 0.15). On a broad
@@ -178,7 +178,7 @@ cargo build --target wasm32-unknown-unknown -p leafmind-fields --features wasm
 ```
 
 The question-answering tests with the real models are skipped by default. To run them, fetch the models
-(about 680 MB) and point the tests at them and at an ONNX Runtime 1.30 library:
+(about 345 MB) and point the tests at them and at an ONNX Runtime 1.30 library:
 
 ```bash
 scripts/fetch-qa-models.sh models/qa
