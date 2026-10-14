@@ -1,5 +1,6 @@
 # A release: push a tag like v0.2.0 that matches the version in Cargo.toml. Runs all of CI, then makes a GitHub
-# release with notes, the field finder's browser package (wasm-pack, SIMD) plus its two models, and the
+# release with notes, the field finder's browser package (wasm-pack, SIMD) plus its two models, leafmind-qa's
+# browser package (wasm-pack, SIMD, with its JavaScript helper; the models come from scripts/fetch-qa-models.sh), and the
 # Tesseract library for macOS apps (built in CI). Rust projects
 # depend on the tag itself (see "Using leafmind in another project" in the README).
 name: Release
@@ -37,6 +38,13 @@ jobs:
           wasm-pack build crates/leafmind-fields --release --target web --out-dir "$PWD/dist/leafmind-fields-wasm" -- --features wasm
           cp models/form-field-v1-nano.onnx models/form-field-v1-state.onnx models/LICENSE-APACHE-2.0 LICENSE dist/leafmind-fields-wasm/
           cd dist && zip -r "leafmind-fields-wasm-$GITHUB_REF_NAME.zip" leafmind-fields-wasm
+      - name: Question answering for the browser
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+        run: |
+          wasm-pack build crates/leafmind-qa --release --target web --out-dir "$PWD/dist/leafmind-qa-wasm" -- --no-default-features --features wasm
+          cp crates/leafmind-qa/js/*.js LICENSE dist/leafmind-qa-wasm/
+          cd dist && zip -r "leafmind-qa-wasm-$GITHUB_REF_NAME.zip" leafmind-qa-wasm
       - uses: actions/download-artifact@v4
         with:
           name: tesseract-macos
@@ -49,5 +57,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
-            --notes "Use it from Cargo: \`leafmind-qa = { git = \"https://github.com/${{ github.repository }}\", tag = \"$GITHUB_REF_NAME\" }\` (same for leafmind-fields and leafmind-ocr). leafmind-fields-wasm: the field finder for the browser, built with SIMD, with its two models. tesseract-macos: Tesseract 5.5.3 for leafmind-ocr in macOS apps (Apple silicon and Intel, macOS 11 or newer, needs nothing else)." \
-            "dist/leafmind-fields-wasm-$GITHUB_REF_NAME.zip" "dist/tesseract-macos-$GITHUB_REF_NAME.zip"
+            --notes "Use it from Cargo: \`leafmind-qa = { git = \"https://github.com/${{ github.repository }}\", tag = \"$GITHUB_REF_NAME\" }\` (same for leafmind-fields and leafmind-ocr). leafmind-fields-wasm: the field finder for the browser, built with SIMD, with its two models. leafmind-qa-wasm: question answering for the browser (WebGPU or CPU, with ONNX Runtime Web 1.30; models: scripts/fetch-qa-models.sh <dir> web). tesseract-macos: Tesseract 5.5.3 for leafmind-ocr in macOS apps (Apple silicon and Intel, macOS 11 or newer, needs nothing else)." \
+            "dist/leafmind-fields-wasm-$GITHUB_REF_NAME.zip" "dist/leafmind-qa-wasm-$GITHUB_REF_NAME.zip" \
+            "dist/tesseract-macos-$GITHUB_REF_NAME.zip"

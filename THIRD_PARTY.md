@@ -59,6 +59,9 @@ describe and reproduce it. On leafmind's broad benchmark (4,190 questions) the a
 - **Files** (folder `gte-embed/`):
   - `model_int8.onnx` (171,260,482 bytes) — `5668afdae8b748de54ef85b7a13a711005ccf2a7a08806159f78b30c5f722cbf`
   - `tokenizer.json` — `c1bafc0e9c74e6cefcd032df267ce8603c7a288a771e517d9c8823e0a7de8a37`
+  - browser build (revision `a789eef86239fee01ba034413e5af09291f28506`): `model_q4f16.onnx` (176,633,173 bytes) —
+    `aa9ae652c7f6effbfc7aa57465f6072256926c944922dee3845cec456168864f`, cut from onnx-community's
+    `onnx/model_q4f16.onnx` (`9726ec27b72918ca0ed491f7f28bb52e6a5c7b8e47a49bd5f6c08a93675a6b55`)
 
 ### gte-reranker — gte-multilingual-reranker-base (picks the answer sentence)
 
@@ -70,11 +73,19 @@ describe and reproduce it. On leafmind's broad benchmark (4,190 questions) the a
 - **Files** (folder `gte-reranker/`):
   - `model_int8.onnx` (171,799,885 bytes) — `4e58a5fd59990fd78afc8a509f27d4f799d8b8723ceea00e0a07fd6f316fb542`
   - `tokenizer.json` — `e26ac9905f59291e2540981b82ca2e1022e9699b2456324f66ddba4804272847`
+  - browser build (revision `a789eef86239fee01ba034413e5af09291f28506`): `model_q4f16.onnx` (177,762,498 bytes) —
+    `8514babe9d028c6314a0ff8d6495bb778b55f54d7d4d3928589314a32c833188`, cut from onnx-community's
+    `onnx/model_q4f16.onnx` (`d24aacb414ccd10944c00622eb2d36c7f90019a8c8bdb882c320dc20f746abec`)
 
 ### ONNX Runtime (shipped by the app)
 
 - The models run on ONNX Runtime 1.30 (https://github.com/microsoft/onnxruntime, MIT), loaded at run time
   from a path the app gives (`QaModels::onnxruntime`); leafmind does not include it.
+- In the browser (`leafmind-qa-wasm-<tag>.zip`) the models run on ONNX Runtime Web 1.30
+  (https://github.com/microsoft/onnxruntime, npm `onnxruntime-web`, MIT), which the app serves and names by URL
+  (`loadQa({ortUrl})`); the package does not include it. The package's `.wasm` contains leafmind-qa compiled with
+  its Rust dependencies, among them pdf-inspector (MIT, with the CMap tables above), lingua (Apache-2.0), tokenizers
+  (Apache-2.0) and wasm-bindgen (MIT or Apache-2.0).
 
 ## OCR: Tesseract and its language files (not in the repository; `scripts/fetch-tessdata.sh` downloads the files)
 

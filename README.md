@@ -3,8 +3,8 @@
 Local document intelligence for PDF tools: find where a form can be filled, read scanned pages, and answer
 questions about a document. Everything runs on the user's device — no cloud, no uploads.
 
-leafmind is written in Rust. The field finder runs natively (desktop apps) and in the browser
-(WebAssembly); question answering is native only (desktop). It works on page images, text and PDF bytes
+leafmind is written in Rust. The field finder and question answering run natively (desktop apps) and in the
+browser (WebAssembly; question answering on WebGPU); OCR is native only. It works on page images, text and PDF bytes
 you give it, so it is not tied to any one app.
 It is in early development.
 
@@ -16,7 +16,7 @@ It is in early development.
   filled scan natively, 340 ms in the browser.
 - **`leafmind-qa`** — answers a question about a PDF by **picking the sentence that answers it**, so numbers
   and wording are the document's own; otherwise it says the answer is not in the document. English, German,
-  Persian and Arabic. About 0.15 s per question.
+  Persian and Arabic. About 0.15 s per question natively; in the browser about 0.13 s on WebGPU (Apple M4 Max).
 - **`leafmind-ocr`** — reads scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract) 5 in
   the same four languages, detects the page's language, and returns paragraphs ready for `leafmind-qa`. On
   office-quality scans: 0.0 % wrong characters in English and German, about 4 % in Persian and Arabic.
@@ -30,9 +30,9 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.5.0" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.6.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.6.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.6.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -43,7 +43,7 @@ libraries below and tells leafmind where they are.
 | Part | Your app ships | Where to get it |
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
-| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` |
+| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
@@ -137,6 +137,27 @@ let doc = match qa.load_document(&bytes) {
     Err(_) => qa.index_pdf(&pdf)?, // stale or damaged: index again
 };
 ```
+
+**In the browser:** unzip `leafmind-qa-wasm-<tag>.zip` from Releases into your site, serve ONNX Runtime Web 1.30
+(the `dist/` folder of the `onnxruntime-web` npm package) and the browser models (`scripts/fetch-qa-models.sh
+<dir> web`). Everything runs in a worker, so the page stays responsive:
+
+```js
+import { loadQa } from "./leafmind-qa-wasm/leafmind-qa-web.js";
+const qa = await loadQa({ ortUrl: "/libs/onnxruntime-web/", modelsUrl: "/models/qa/" }); // URLs end with "/"
+const doc = await qa.indexPdf(pdfBytes);                    // or qa.indexPages([1, 2], [text1, text2])
+const answer = await qa.ask(doc, "When does the contract end?");
+// {kind: "found", sentences: [{page, text, section}], confidence} | {kind: "not_found", bestConfidence}
+// | {kind: "wrong_language", document, question}
+const bytes = await qa.saveDocument(doc);                   // e.g. into IndexedDB; qa.loadDocument(bytes) later
+```
+
+It uses WebGPU when the browser has it (about 0.13 s per question and 0.2 s per document page on an Apple M4 Max)
+and the CPU otherwise (several seconds per question: a fallback). The browser models are 4-bit versions of the same
+models: on the benchmark they show about 5 % fewer answers than the native ones. The package is about 33 MB (18 MB
+compressed). For several CPU threads, serve the page cross-origin isolated (`Cross-Origin-Opener-Policy:
+same-origin`, `Cross-Origin-Embedder-Policy: require-corp`). `loadQa` also takes `device` ("auto", "webgpu",
+"wasm"), `minConfidence` and `minGap`.
 
 ### 5. Read scanned pages
 
