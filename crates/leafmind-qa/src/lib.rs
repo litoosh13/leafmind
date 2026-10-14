@@ -28,20 +28,26 @@
 
 use std::fmt;
 
+#[cfg(feature = "native")]
 mod engine;
 mod flow;
 pub mod language;
-#[cfg(test)]
+#[cfg(all(test, feature = "native"))]
 mod model_tests;
 mod saved;
 pub mod search;
 #[cfg(test)]
 mod test_pdf;
 pub mod text;
+#[cfg(feature = "wasm")]
+mod web;
 
+#[cfg(feature = "native")]
 pub use engine::{QaEngine, QaModels};
 pub use flow::{Answer, Document, QaOptions};
 pub use language::Language;
+#[cfg(feature = "wasm")]
+pub use web::{QaWeb, WebDocument};
 
 /// What can go wrong.
 #[derive(Debug)]

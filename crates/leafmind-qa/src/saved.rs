@@ -22,6 +22,7 @@ pub(crate) struct Key {
 
 /// FNV-1a over 8-byte words of the given files (stable across Rust versions, unlike `DefaultHasher`). Reads
 /// 1 MB at a time, so the 340 MB embedder adds no memory at load (and about 0.08 s on an Apple M4).
+#[cfg(feature = "native")]
 pub(crate) fn fingerprint(files: &[std::path::PathBuf]) -> Result<u64, Error> {
     use std::io::Read;
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -51,6 +52,21 @@ pub(crate) fn fingerprint(files: &[std::path::PathBuf]) -> Result<u64, Error> {
         mix(len);
     }
     Ok(h)
+}
+
+/// The same fingerprint over byte strings already in memory (the browser build gets no files): equal to
+/// [`fingerprint`] of files with these contents.
+#[cfg(any(feature = "wasm", test))]
+pub(crate) fn fingerprint_bytes(parts: &[&[u8]]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut mix = |w: u64| h = (h ^ w).wrapping_mul(0x0000_0100_0000_01b3);
+    for part in parts {
+        let (words, rest) = part.as_chunks::<8>();
+        words.iter().for_each(|w| mix(u64::from_le_bytes(*w)));
+        rest.iter().for_each(|&b| mix(b as u64));
+        mix(part.len() as u64);
+    }
+    h
 }
 
 fn chunking_code(c: Chunking) -> u8 {
@@ -274,6 +290,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native")]
     fn fingerprint_follows_the_bytes() {
         let dir = std::env::temp_dir().join("leafmind-qa-fingerprint");
         std::fs::create_dir_all(&dir).unwrap();
@@ -285,5 +302,6 @@ mod tests {
         assert_ne!(fa, fingerprint(std::slice::from_ref(&b)).unwrap());
         // Fixed across Rust versions and machines.
         assert_eq!(fa, 0x2209_b749_56d9_2c1c, "{fa:#x}");
+        assert_eq!(fingerprint_bytes(&[b"model bytes, version 1"]), fa);
     }
 }
