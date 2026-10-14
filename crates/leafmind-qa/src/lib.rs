@@ -29,6 +29,7 @@
 use std::fmt;
 
 mod engine;
+mod flow;
 pub mod language;
 #[cfg(test)]
 mod model_tests;
@@ -38,7 +39,8 @@ pub mod search;
 mod test_pdf;
 pub mod text;
 
-pub use engine::{Answer, Document, QaEngine, QaModels, QaOptions};
+pub use engine::{QaEngine, QaModels};
+pub use flow::{Answer, Document, QaOptions};
 pub use language::Language;
 
 /// What can go wrong.

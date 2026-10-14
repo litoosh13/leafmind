@@ -1,11 +1,11 @@
-//! The models and the question-answering flow: gte-multilingual-base embeds chunks and questions,
-//! gte-multilingual-reranker-base scores (question, sentence) pairs. Both run on ONNX Runtime, which the app
-//! ships and names by path.
+//! The native engine: gte-multilingual-base embeds chunks and questions, gte-multilingual-reranker-base scores
+//! (question, sentence) pairs. Both run on ONNX Runtime, which the app ships and names by path. The flow around
+//! the models is in `flow`, shared with the browser build.
 
-use crate::language::{Language, LanguageCheck};
+use crate::flow::{self, Answer, Document, QaOptions};
+use crate::language::LanguageCheck;
 use crate::saved;
-use crate::search::{self, Bm25};
-use crate::text::{self, Chunking};
+use crate::text;
 use crate::{Error, Passage};
 use ort::session::{Session, builder::GraphOptimizationLevel};
 use ort::value::Tensor;
@@ -13,8 +13,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tokenizers::{PaddingParams, Tokenizer, TruncationParams};
 
-/// How many best chunks are split into sentences for the reranker.
-const TOP_CHUNKS: usize = 8;
 /// Longest input the models see, in tokens.
 const MAX_TOKENS: usize = 512;
 
@@ -28,71 +26,6 @@ pub struct QaModels {
     pub embedder: PathBuf,
     /// gte-multilingual-reranker-base (picks the answer sentence).
     pub reranker: PathBuf,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct QaOptions {
-    /// CPU threads per model; 0 = half the logical CPUs (about the physical cores).
-    pub threads: usize,
-    /// Below this reranker score the answer is withheld ([`Answer::NotFound`]).
-    pub min_confidence: f64,
-    /// The answer is also withheld when another sentence scores almost as high: the answer's score must
-    /// beat the best sentence outside the answer by at least this much. 0.15 cut the wrong answers shown on a
-    /// broad public benchmark (14 sets, 4 languages) from 666 to 98 and kept 1,433 of 2,083 right ones; lower it
-    /// (0.1, 0.05, 0) for more answers and more wrong ones.
-    pub min_gap: f64,
-    /// How the document is cut into search chunks.
-    pub chunking: Chunking,
-}
-
-impl Default for QaOptions {
-    fn default() -> Self {
-        QaOptions {
-            threads: 0,
-            min_confidence: 0.5,
-            min_gap: 0.15,
-            chunking: Chunking::Paragraph,
-        }
-    }
-}
-
-/// A document ready for questions. Plain data, so an app can keep it while the document is open.
-#[derive(Clone, Debug)]
-pub struct Document {
-    chunks: Vec<Passage>,
-    bm25: Bm25,
-    vectors: Vec<Vec<f32>>,
-    language: Option<Language>,
-}
-
-impl Document {
-    /// The search chunks, in document order.
-    pub fn chunks(&self) -> &[Passage] {
-        &self.chunks
-    }
-
-    /// The document's language, if it could be told (questions must be asked in it).
-    pub fn language(&self) -> Option<Language> {
-        self.language
-    }
-}
-
-/// The result of [`QaEngine::ask`].
-#[derive(Clone, Debug, PartialEq)]
-pub enum Answer {
-    /// The sentence that answers the question (then amendments that change it), exactly as in the document.
-    Found {
-        sentences: Vec<Passage>,
-        confidence: f64,
-    },
-    /// No sentence scored high enough, or another sentence scored almost as high: the answer is withheld rather
-    /// than guessed.
-    NotFound { best_confidence: f64 },
-    /// The question is clearly in another language than the document: ask again in the document's language.
-    WrongLanguage {
-        document: Language,
-        question: Language,
-    },
 }
 
 pub(crate) fn model_error(e: impl std::fmt::Display) -> Error {
@@ -177,8 +110,7 @@ impl Model {
                 .try_extract_tensor::<f32>()
                 .map_err(model_error)?;
             for row in v.chunks(v.len() / b) {
-                let norm = row.iter().map(|x| x * x).sum::<f32>().sqrt();
-                out.push(row.iter().map(|x| x / norm).collect());
+                out.push(flow::unit(row));
             }
         }
         Ok(out)
@@ -200,7 +132,7 @@ impl Model {
             let (_, logits) = outputs["logits"]
                 .try_extract_tensor::<f32>()
                 .map_err(model_error)?;
-            scores.push(1.0 / (1.0 + (-logits[0] as f64).exp()));
+            scores.push(flow::probability(logits[0]));
         }
         Ok(scores)
     }
@@ -257,13 +189,7 @@ impl QaEngine {
     /// document again.
     pub fn load_document(&self, bytes: &[u8]) -> Result<Document, Error> {
         let (chunks, vectors, language) = saved::from_bytes(self.saved_key(), bytes)?;
-        let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
-        Ok(Document {
-            bm25: Bm25::new(&texts),
-            vectors,
-            chunks,
-            language,
-        })
+        Ok(Document::new(chunks, vectors, language))
     }
 
     /// Reads a PDF and prepares it for questions.
@@ -279,12 +205,7 @@ impl QaEngine {
         let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
         let vectors = self.embedder.embed(&texts)?;
         let language = self.language.document(&texts.join(" "));
-        Ok(Document {
-            bm25: Bm25::new(&texts),
-            vectors,
-            chunks,
-            language,
-        })
+        Ok(Document::new(chunks, vectors, language))
     }
 
     /// Finds the sentence of `doc` that answers `question`, or withholds the answer. About 0.1–0.25 s on a CPU.
@@ -300,37 +221,8 @@ impl QaEngine {
             });
         }
         let q = self.embedder.embed(&[question])?.remove(0);
-        let similarity: Vec<f64> = doc
-            .vectors
-            .iter()
-            .map(|v| v.iter().zip(&q).map(|(a, b)| a * b).sum::<f32>() as f64)
-            .collect();
-        let keyword = doc.bm25.scores(question);
-        // Keyword ranks only count when some question word occurs at all.
-        let fused = if keyword.iter().any(|&s| s > 0.0) {
-            search::rrf(&[&similarity, &keyword])
-        } else {
-            search::rrf(&[&similarity])
-        };
-        let top: Vec<&Passage> = search::order(&fused)
-            .into_iter()
-            .take(TOP_CHUNKS)
-            .map(|i| &doc.chunks[i])
-            .collect();
-        let sentences = text::sentences(&top);
+        let sentences = flow::candidates(doc, question, &q);
         let scores = self.reranker.rerank(question, &sentences)?;
-        let picked = search::pick(&scores, &sentences);
-        let confidence = picked.first().map_or(0.0, |&i| scores[i]);
-        let clear = search::gap(&scores, &picked, &sentences) >= self.options.min_gap;
-        Ok(if confidence >= self.options.min_confidence && clear {
-            Answer::Found {
-                sentences: picked.iter().map(|&i| sentences[i].clone()).collect(),
-                confidence,
-            }
-        } else {
-            Answer::NotFound {
-                best_confidence: confidence,
-            }
-        })
+        Ok(flow::decide(&self.options, &scores, &sentences))
     }
 }
