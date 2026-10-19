@@ -113,6 +113,15 @@ fn is_bare_label(line: &str) -> bool {
         && !line.ends_with(['.', '!', '?', '؟', ';', ',', '،'])
 }
 
+/// A form row "label: value" (a short label before the first ":"), which never wraps into the next line.
+pub(crate) fn is_label_value(line: &str) -> bool {
+    line.split_once([':', '：']).is_some_and(|(label, value)| {
+        !value.trim().is_empty()
+            && label.chars().count() <= 40
+            && label.chars().any(char::is_alphabetic)
+    })
+}
+
 /// Whether `value` (a line or paragraph) is the value of the bare label before it, not a label, heading text
 /// or list item of its own.
 fn joins_label(label: &str, value: &str) -> bool {
@@ -461,6 +470,8 @@ pub fn sentences_of(text: &str) -> Vec<String> {
             Some(prev)
                 if prev.chars().count() > 60
                     && !prev.ends_with(['.', '!', '?', '؟', ':', '：', ';'])
+                    && !is_label_value(prev)
+                    && !is_label_value(line)
                     && !starts_with_bullet(line) =>
             {
                 Some(" ")
@@ -948,6 +959,16 @@ mod tests {
             [
                 "Wer die Hecke nicht rechtzeitig schneidet, erhält vom Vorstand des Vereins eine Abmahnung.",
                 "Danke."
+            ]
+        );
+        // Form rows ("label: value") never wrap into each other, however long.
+        assert_eq!(
+            sentences_of(
+                "Applicant and garden plot requested: Maria Example, plot B-14 in the north field\nPlot size: 250"
+            ),
+            [
+                "Applicant and garden plot requested: Maria Example, plot B-14 in the north field",
+                "Plot size: 250"
             ]
         );
         // A word starting with a bullet letter is not a bullet.

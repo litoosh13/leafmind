@@ -10,6 +10,11 @@ use crate::text::{self, Chunking};
 /// How many best chunks are split into sentences for the reranker.
 pub(crate) const TOP_CHUNKS: usize = 8;
 
+/// A document is a form when at least this share of its sentences are short form rows ("label: value", value
+/// ≤ 60 characters). On a broad public benchmark (14 sets) no document reached 0.4 (long reports up to 0.3, where
+/// the forms rule made wrong answers); invented forms are around 0.75.
+const FORM_SHARE: f64 = 0.4;
+
 #[derive(Clone, Copy, Debug)]
 pub struct QaOptions {
     /// CPU threads per model; 0 = half the logical CPUs (about the physical cores). Native only.
@@ -19,7 +24,8 @@ pub struct QaOptions {
     /// The answer is also withheld when another sentence scores almost as high: the answer's score must
     /// beat the best sentence outside the answer by at least this much. 0.15 cut the wrong answers shown on a
     /// broad public benchmark (14 sets, 4 languages) from 666 to 98 and kept 1,433 of 2,083 right ones; lower it
-    /// (0.1, 0.05, 0) for more answers and more wrong ones.
+    /// (0.1, 0.05, 0) for more answers and more wrong ones. Not in a form for a row ("label: value") whose label
+    /// the question names: form rows score close to each other, and the label says which one is asked for.
     pub min_gap: f64,
     /// How the document is cut into search chunks.
     pub chunking: Chunking,
@@ -43,6 +49,8 @@ pub struct Document {
     bm25: Bm25,
     pub(crate) vectors: Vec<Vec<f32>>,
     pub(crate) language: Option<Language>,
+    /// Whether the document is a form ([`FORM_SHARE`]): only then the forms rule of [`decide`] applies.
+    pub(crate) form: bool,
 }
 
 impl Document {
@@ -53,7 +61,17 @@ impl Document {
         language: Option<Language>,
     ) -> Self {
         let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
+        let sentences: Vec<String> = texts.iter().flat_map(|t| text::sentences_of(t)).collect();
+        let rows = sentences
+            .iter()
+            .filter(|s| {
+                text::is_label_value(s)
+                    && s.split_once([':', '：'])
+                        .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
+            })
+            .count();
         Document {
+            form: rows as f64 >= FORM_SHARE * sentences.len().max(1) as f64,
             bm25: Bm25::new(&texts),
             vectors,
             chunks,
@@ -130,11 +148,27 @@ pub(crate) fn candidates(doc: &Document, question: &str, question_vector: &[f32]
 }
 
 /// The answer from the reranker's `scores` of the `sentences`: the best one and its amendments, unless it scores
-/// below `min_confidence` or another sentence scores almost as high (`min_gap`).
-pub(crate) fn decide(options: &QaOptions, scores: &[f64], sentences: &[Passage]) -> Answer {
+/// below `min_confidence` or another sentence scores almost as high (`min_gap`). In the second case, in a form
+/// (`form`, see [`Document`]), a form row whose label the question names is still the answer ([`form_row`]).
+pub(crate) fn decide(
+    options: &QaOptions,
+    form: bool,
+    question: &str,
+    scores: &[f64],
+    sentences: &[Passage],
+) -> Answer {
     let picked = search::pick(scores, sentences);
     let confidence = picked.first().map_or(0.0, |&i| scores[i]);
     let clear = search::gap(scores, &picked, sentences) >= options.min_gap;
+    if !(confidence >= options.min_confidence && clear)
+        && form
+        && let Some(i) = form_row(question, scores, sentences, options.min_confidence)
+    {
+        return Answer::Found {
+            sentences: vec![sentences[i].clone()],
+            confidence: scores[i],
+        };
+    }
     if confidence >= options.min_confidence && clear {
         Answer::Found {
             sentences: picked.iter().map(|&i| sentences[i].clone()).collect(),
@@ -144,5 +178,140 @@ pub(crate) fn decide(options: &QaOptions, scores: &[f64], sentences: &[Passage])
         Answer::NotFound {
             best_confidence: confidence,
         }
+    }
+}
+
+/// Question words and fillers (EN/DE/FA/AR) that ask rather than name what is asked; they never match a label.
+const ASKING: &[&str] = &[
+    "what", "which", "when", "where", "who", "whom", "whose", "how", "much", "many", "does", "did",
+    "the", "and", "for", "are", "was", "were", "this", "that", "with", "from", "will", "should",
+    "have", "has", "can", "wie", "wann", "wer", "welche", "welcher", "welches", "lautet", "ist",
+    "sind", "der", "die", "das", "den", "dem", "des", "und", "hat", "soll", "wird", "viel",
+    "viele", "für", "von", "mit", "چه", "چیست", "کدام", "چند", "است", "این", "متى", "أين", "كم",
+    "على",
+];
+
+/// The words of `text` with at least 3 characters and a letter, in lower case.
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.chars().count() >= 3 && w.chars().any(char::is_alphabetic))
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Two words match when they start alike ("applicant" / "applicant's", "start" / "starts"): the first 5
+/// characters, or all of the shorter one.
+fn same_word(a: &str, b: &str) -> bool {
+    let n = a.chars().count().min(b.chars().count()).min(5);
+    a.chars().take(n).eq(b.chars().take(n))
+}
+
+/// The best-scoring form row ("label: value") that reaches `min_confidence` and whose label the question names:
+/// at least half of the label's words are in the question. Form rows score close to each other with the reranker,
+/// so the gap rule withholds them; the label says which row is asked for.
+fn form_row(
+    question: &str,
+    scores: &[f64],
+    sentences: &[Passage],
+    min_confidence: f64,
+) -> Option<usize> {
+    let asked: Vec<String> = words(question)
+        .into_iter()
+        .filter(|w| !ASKING.contains(&w.as_str()))
+        .collect();
+    let mut best: Option<usize> = None;
+    for (i, s) in sentences.iter().enumerate() {
+        let Some((label, _)) = s.text.split_once([':', '：']) else {
+            continue;
+        };
+        let label = words(label);
+        if !text::is_label_value(&s.text) || label.is_empty() || scores[i] < min_confidence {
+            continue;
+        }
+        let named = label
+            .iter()
+            .filter(|l| asked.iter().any(|q| same_word(l, q)))
+            .count();
+        if 2 * named >= label.len() && best.is_none_or(|b| scores[i] > scores[b]) {
+            best = Some(i);
+        }
+    }
+    best
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(texts: &[&str]) -> Vec<Passage> {
+        texts
+            .iter()
+            .map(|t| Passage {
+                page: 1,
+                text: t.to_string(),
+                section: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_form_row_named_by_the_question_skips_the_gap_rule() {
+        let options = QaOptions::default();
+        let s = rows(&[
+            "2.1 Requested plot number: B-14",
+            "2.2 Plot size: 250",
+            "Notes: none",
+        ]);
+        let scores = [0.57, 0.58, 0.55];
+        // Close scores: the gap rule alone withholds; the label "Plot size" is named by the question.
+        assert!(matches!(
+            decide(&options, true, "Who signs?", &scores, &s),
+            Answer::NotFound { .. }
+        ));
+        match decide(&options, true, "How big is the plot size?", &scores, &s) {
+            Answer::Found { sentences, .. } => assert_eq!(sentences[0].text, "2.2 Plot size: 250"),
+            other => panic!("{other:?}"),
+        }
+        // Not in a document that is no form.
+        assert!(matches!(
+            decide(&options, false, "How big is the plot size?", &scores, &s),
+            Answer::NotFound { .. }
+        ));
+        // Of two named rows the better-scoring one; below min_confidence never.
+        assert!(matches!(
+            decide(&options, true, "Requested plot size?", &[0.57, 0.45, 0.55], &s),
+            Answer::Found { confidence, .. } if confidence == 0.57
+        ));
+        assert!(matches!(
+            decide(&options, true, "Plot size?", &[0.4, 0.45, 0.42], &s),
+            Answer::NotFound { .. }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod form_tests {
+    use super::*;
+
+    #[test]
+    fn a_document_is_a_form_by_its_share_of_form_rows() {
+        let chunk = |text: &str| Passage {
+            page: 1,
+            text: text.into(),
+            section: None,
+        };
+        let doc = |texts: &[&str]| {
+            let chunks: Vec<Passage> = texts.iter().map(|t| chunk(t)).collect();
+            let n = chunks.len();
+            Document::new(chunks, vec![vec![1.0]; n], None).form
+        };
+        assert!(doc(&[
+            "Name: Maria Example\nPlot: B-14\nSize: 250",
+            "Signature"
+        ]));
+        assert!(!doc(&[
+            "The lease runs for two years. Rent is due monthly. Parking is extra.",
+            "Note: the garden closes at dusk."
+        ]));
     }
 }

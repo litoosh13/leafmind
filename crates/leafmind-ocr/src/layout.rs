@@ -17,6 +17,8 @@ struct Line {
     left: f32,
     right: f32,
     words: Vec<String>,
+    /// Left and right edge of each word.
+    spans: Vec<(f32, f32)>,
 }
 
 /// One word row of the TSV: (block, paragraph, line, left, top, width, height, confidence, text).
@@ -63,6 +65,7 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32, Vec<OcrWord>) {
                 left,
                 right: left + width,
                 words: Vec::new(),
+                spans: Vec::new(),
             });
         }
         let current = lines.last_mut().unwrap();
@@ -71,6 +74,7 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32, Vec<OcrWord>) {
         current.left = current.left.min(left);
         current.right = current.right.max(left + width);
         current.words.push(text.to_string());
+        current.spans.push((left, left + width));
         found.push(OcrWord {
             text: text.to_string(),
             bounds: [left, top, left + width, top + height],
@@ -88,10 +92,28 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32, Vec<OcrWord>) {
     if let Some(text) = form_rows(&lines, median) {
         return (text, confidence, found);
     }
+    // Fields with the label above the value become "label: value" rows, in place of their first line.
+    let (pairs, used) = stacked_fields(&lines, median);
     let mut text = String::new();
+    let mut prev: Option<&Line> = None;
     for (i, line) in lines.iter().enumerate() {
-        if i > 0 {
-            let prev = &lines[i - 1];
+        if let Some(rows) = pairs.get(&i) {
+            if !text.is_empty() {
+                text.push_str(if text.ends_with(FIELD_END) {
+                    "\n"
+                } else {
+                    "\n\n"
+                });
+            }
+            text.push_str(rows);
+            text.push_str(FIELD_END);
+            prev = None;
+            continue;
+        }
+        if used.contains(&i) {
+            continue;
+        }
+        if let Some(prev) = prev {
             let gap = line.top - prev.bottom;
             text.push_str(
                 if line.block != prev.block || gap > PARAGRAPH_GAP * median {
@@ -100,10 +122,148 @@ pub(crate) fn page_text(tsv: &str) -> (String, f32, Vec<OcrWord>) {
                     " "
                 },
             );
+        } else if !text.is_empty() {
+            text.push_str("\n\n");
         }
         text.push_str(&line.words.join(" "));
+        prev = Some(line);
     }
-    (text, confidence, found)
+    (text.replace(FIELD_END, ""), confidence, found)
+}
+
+/// Marks the end of a block of field rows while the page text is put together (removed at the end).
+const FIELD_END: &str = "\u{1}";
+
+/// One box of a row: its text and its edges.
+struct Cell {
+    text: String,
+    left: f32,
+    right: f32,
+}
+
+/// The boxes of a row of lines: words split where the space between them is wider than 1.5 line heights.
+fn cells(row: &[&Line], median: f32) -> Vec<Cell> {
+    let mut words: Vec<(&str, (f32, f32))> = row
+        .iter()
+        .flat_map(|l| {
+            l.words
+                .iter()
+                .map(String::as_str)
+                .zip(l.spans.iter().copied())
+        })
+        .collect();
+    words.sort_by(|a, b| a.1.0.total_cmp(&b.1.0));
+    let mut out: Vec<Cell> = Vec::new();
+    for (word, (left, right)) in words {
+        match out.last_mut() {
+            Some(cell) if left - cell.right <= 1.5 * median => {
+                cell.text.push(' ');
+                cell.text.push_str(word);
+                cell.right = cell.right.max(right);
+            }
+            _ => out.push(Cell {
+                text: word.to_string(),
+                left,
+                right,
+            }),
+        }
+    }
+    out
+}
+
+/// Fields printed as a label with its value under it, in boxes side by side ("NAME" over "Maria Example"): a row
+/// of short labels pairs with the row just below it of short values (≤ 60 characters, no sentence) when every
+/// value starts where a label starts (ends, in
+/// right-to-left text) and the labels are not taller than the values (a title above a form is). A single label
+/// must be clearly smaller than its value: two left-aligned lines of prose look the same otherwise. Returns the
+/// "label: value" rows by the index of the label row's first line, and all lines used.
+fn stacked_fields(
+    lines: &[Line],
+    median: f32,
+) -> (
+    std::collections::HashMap<usize, String>,
+    std::collections::HashSet<usize>,
+) {
+    let mut pairs = std::collections::HashMap::new();
+    let mut used = std::collections::HashSet::new();
+    if median <= 0.0 {
+        return (pairs, used);
+    }
+    // Rows: lines whose heights overlap by half, top to bottom.
+    let mut order: Vec<usize> = (0..lines.len()).collect();
+    order.sort_by(|&a, &b| lines[a].top.total_cmp(&lines[b].top));
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    for i in order {
+        let l = &lines[i];
+        match rows.last_mut() {
+            Some(row)
+                if {
+                    let r = &lines[row[0]];
+                    r.bottom.min(l.bottom) - r.top.max(l.top)
+                        >= 0.5 * (r.bottom - r.top).min(l.bottom - l.top)
+                } =>
+            {
+                row.push(i)
+            }
+            _ => rows.push(vec![i]),
+        }
+    }
+    let height = |row: &[usize]| {
+        row.iter()
+            .map(|&i| lines[i].bottom - lines[i].top)
+            .fold(0.0, f32::max)
+    };
+    let mut k = 0;
+    while k + 1 < rows.len() {
+        let (top, below) = (&rows[k], &rows[k + 1]);
+        let top_lines: Vec<&Line> = top.iter().map(|&i| &lines[i]).collect();
+        let below_lines: Vec<&Line> = below.iter().map(|&i| &lines[i]).collect();
+        let gap = below_lines.iter().map(|l| l.top).fold(f32::MAX, f32::min)
+            - top_lines.iter().map(|l| l.bottom).fold(f32::MIN, f32::max);
+        let (labels, values) = (cells(&top_lines, median), cells(&below_lines, median));
+        let rtl = is_rtl(&values.iter().map(|c| c.text.as_str()).collect::<String>());
+        let start = |c: &Cell| if rtl { c.right } else { c.left };
+        let label_like = labels.iter().all(|c| {
+            // Scanner noise reads as "AT", "a": a label has at least 3 letters.
+            c.text.chars().count() <= 40
+                && c.text.chars().filter(|c| c.is_alphabetic()).count() >= 3
+                && !c.text.ends_with(['.', '!', '?', ':', '：'])
+        });
+        // Form values are short, never prose (a heading above a paragraph is no label).
+        let value_like = values
+            .iter()
+            .all(|c| c.text.chars().count() <= 60 && !c.text.contains(". "));
+        let matched: Option<Vec<(usize, &Cell)>> = values
+            .iter()
+            .map(|v| {
+                labels
+                    .iter()
+                    .position(|l| (start(l) - start(v)).abs() <= median)
+                    .map(|i| (i, v))
+            })
+            .collect();
+        match matched {
+            Some(matched)
+                if !matched.is_empty()
+                    && label_like
+                    && value_like
+                    && gap <= 1.5 * median
+                    && height(top) <= 1.1 * height(below)
+                    && (labels.len() >= 2 || height(top) <= 0.85 * height(below)) =>
+            {
+                let rows_text: Vec<String> = matched
+                    .iter()
+                    .map(|(i, v)| format!("{}: {}", labels[*i].text, v.text))
+                    .collect();
+                let first = *top.iter().min().unwrap();
+                pairs.insert(first, rows_text.join("\n"));
+                used.extend(top.iter().chain(below.iter()).copied());
+                k += 2;
+            }
+            _ => k += 1,
+        }
+    }
+    (pairs, used)
 }
 
 /// Whether text is mostly right-to-left (Arabic script).
@@ -316,6 +476,54 @@ mod tests {
             text,
             "Plot: B-14\nDate: 14.05.2027\nMember: 4711\nRent: 120 Euro"
         );
+    }
+
+    /// Words with their own widths and heights: (block, line, left, top, height, text).
+    fn tsv_sized(words: &[(u32, u32, u32, u32, u32, &str)]) -> String {
+        words
+            .iter()
+            .map(|&(b, l, left, top, h, t)| {
+                let width = h / 2 * t.chars().count() as u32;
+                format!("5\t1\t{b}\t1\t{l}\t1\t{left}\t{top}\t{width}\t{h}\t90\t{t}\n")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn labels_above_values_are_paired() {
+        // A title, then two rows of boxes: small labels (14 high) above their values (20 high).
+        let words = [
+            (1, 0, 100, 40, 30, "Garden plot application"),
+            (2, 0, 100, 100, 14, "PLOT NUMBER"),
+            (2, 0, 600, 100, 14, "PLOT SIZE"),
+            (2, 1, 100, 120, 20, "B-14"),
+            (2, 1, 600, 120, 20, "250 square metres"),
+            (3, 0, 100, 170, 14, "Name of the applicant"),
+            (3, 0, 600, 170, 14, "Start of the lease"),
+            (3, 1, 100, 190, 20, "Maria Example"),
+        ];
+        let (text, _, _) = page_text(&tsv_sized(&words));
+        assert_eq!(
+            text,
+            "Garden plot application\n\nPLOT NUMBER: B-14\nPLOT SIZE: 250 square metres\n\
+             Name of the applicant: Maria Example"
+        );
+        // A heading above a paragraph is not a field (the "value" is prose), nor are two lines of prose.
+        let words = [
+            (1, 0, 100, 100, 20, "3. Service levels"),
+            (
+                1,
+                1,
+                100,
+                124,
+                20,
+                "Each party keeps the other party's information secret. Invoices are due.",
+            ),
+            (2, 0, 100, 180, 20, "The rent"),
+            (2, 1, 100, 204, 20, "is 120 Euro"),
+        ];
+        let (text, _, _) = page_text(&tsv_sized(&words));
+        assert!(!text.contains(": "), "{text}");
     }
 
     #[test]

@@ -120,7 +120,9 @@ more than one: the answer, then amendments that change it.
 leafmind-qa says "not in the document" rather than guess: when the best sentence scores below
 `QaOptions::min_confidence` (0.5), or when another sentence scores almost as high (`min_gap`, 0.15). On a broad
 public benchmark this keeps about 1 in 15 shown answers wrong instead of 1 in 4; lower `min_gap` to show more
-answers and accept more wrong ones:
+answers and accept more wrong ones. In a form (at least 40 % of its sentences are short "label: value" rows), a
+row whose label the question names is answered even when other rows score almost as high (invented forms: 24 → 34
+of 80 answered, none wrong). To lower `min_gap`:
 
 ```rust
 let qa = QaEngine::load(&models, QaOptions { min_gap: 0.1, ..Default::default() })?;

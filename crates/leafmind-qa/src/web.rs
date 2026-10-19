@@ -162,7 +162,13 @@ impl Inner {
         let q = self.embed(&[question]).await?.remove(0);
         let sentences = flow::candidates(doc, question, &q);
         let scores = self.rerank(question, &sentences).await?;
-        Ok(flow::decide(&self.options, &scores, &sentences))
+        Ok(flow::decide(
+            &self.options,
+            doc.form,
+            question,
+            &scores,
+            &sentences,
+        ))
     }
 
     /// Unit-length embeddings of `texts`.

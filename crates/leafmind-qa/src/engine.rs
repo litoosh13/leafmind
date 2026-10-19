@@ -223,6 +223,12 @@ impl QaEngine {
         let q = self.embedder.embed(&[question])?.remove(0);
         let sentences = flow::candidates(doc, question, &q);
         let scores = self.reranker.rerank(question, &sentences)?;
-        Ok(flow::decide(&self.options, &scores, &sentences))
+        Ok(flow::decide(
+            &self.options,
+            doc.form,
+            question,
+            &scores,
+            &sentences,
+        ))
     }
 }
