@@ -202,8 +202,16 @@ pub fn pdf_pages(pdf: &[u8]) -> Result<Vec<(u32, String)>, Error> {
         .filter(|p| !result.pages_with_tables.contains(p))
         .copied()
         .collect();
+    // A text form with one "label: value" per line comes out as one paragraph; such pages are split at the
+    // PDF's own line ends (see [`split_at_lines`]).
+    let flat: Vec<u32> = result
+        .pages
+        .iter()
+        .filter(|p| p.markdown.split("\n\n").any(maybe_rows))
+        .map(|p| p.page + 1)
+        .collect();
     use pdf_inspector::types::ItemType;
-    let items: Vec<(u32, Piece)> = match grid.is_empty() {
+    let items: Vec<(u32, Piece)> = match grid.is_empty() && flat.is_empty() {
         true => Vec::new(),
         false => pdf_inspector::extract_text_with_positions_mem(pdf)
             .unwrap_or_default()
@@ -234,12 +242,76 @@ pub fn pdf_pages(pdf: &[u8]) -> Result<Vec<(u32, String)>, Error> {
         .into_iter()
         .map(|p| {
             let page = p.page + 1;
-            let rows = grid
-                .contains(&page)
-                .then(|| form_rows(items.iter().filter(|i| i.0 == page).map(|i| &i.1).collect()));
-            (page, rows.flatten().unwrap_or(p.markdown))
+            let on_page = || items.iter().filter(|i| i.0 == page).map(|i| &i.1).collect();
+            let rows = grid.contains(&page).then(|| form_rows(on_page())).flatten();
+            let text = match rows {
+                Some(rows) => rows,
+                None if flat.contains(&page) => {
+                    let lines: Vec<String> = visual_rows(on_page())
+                        .iter()
+                        .map(|row| {
+                            let mut pieces = row.items.clone();
+                            pieces.sort_by(|a, b| a.x.total_cmp(&b.x));
+                            pieces
+                                .iter()
+                                .map(|i| i.text.trim())
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        })
+                        .collect();
+                    p.markdown
+                        .split("\n\n")
+                        .map(|par| match maybe_rows(par) {
+                            true => split_at_lines(par, &lines).unwrap_or_else(|| par.to_string()),
+                            false => par.to_string(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                }
+                None => p.markdown,
+            };
+            (page, text)
         })
         .collect())
+}
+
+/// A paragraph that may be form rows run together: three or more "label: " in one line of text.
+fn maybe_rows(par: &str) -> bool {
+    !par.trim().contains('\n') && par.matches(": ").count() >= 3
+}
+
+/// `par` split where the page's printed `lines` end, if its words are those lines one after the other and most
+/// of them are short form rows ("label: value", value ≤ 60 characters); otherwise `None` (prose with colons
+/// stays one paragraph).
+fn split_at_lines(par: &str, lines: &[String]) -> Option<String> {
+    let clean = strip_markup(par);
+    let words: Vec<&str> = clean.split_whitespace().collect();
+    let line_words: Vec<Vec<&str>> = lines
+        .iter()
+        .map(|l| l.split_whitespace().collect())
+        .collect();
+    let starts = |at: usize, line: &[&str]| !line.is_empty() && words[at..].starts_with(line);
+    let first = (0..lines.len()).find(|&r| starts(0, &line_words[r]))?;
+    let (mut at, mut out) = (0, Vec::new());
+    for line in &line_words[first..] {
+        if at == words.len() {
+            break;
+        }
+        if !starts(at, line) {
+            return None;
+        }
+        at += line.len();
+        out.push(line.join(" "));
+    }
+    let rows = out
+        .iter()
+        .filter(|l| {
+            is_label_value(l)
+                && l.split_once([':', '：'])
+                    .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
+        })
+        .count();
+    (at == words.len() && rows >= 3 && 2 * rows >= out.len()).then(|| out.join("\n"))
 }
 
 /// A piece of text on a page: its box in PDF points (y grows upward, `y` is the bottom) and whether it is the
@@ -260,19 +332,8 @@ struct Row<'a> {
     items: Vec<&'a Piece>,
 }
 
-/// A page's text read row by row, if the page looks like a form grid: at least 5 rows, and at least a third of
-/// them a short label (≤ 40 characters) with more text well to its right. Each row becomes a line
-/// "label: value"; rows further apart than two lines start a new paragraph.
-fn form_rows(mut items: Vec<&Piece>) -> Option<String> {
-    // The page's usual type size: gaps and headings are measured in it.
-    let mut sizes: Vec<f32> = items
-        .iter()
-        .filter(|i| !i.field)
-        .map(|i| i.height)
-        .collect();
-    sizes.sort_by(f32::total_cmp);
-    let line = sizes.get(sizes.len() / 2).copied().unwrap_or(10.0).max(1.0);
-    // Rows: items whose heights overlap by at least half of the smaller one, top to bottom.
+/// The rows of a page: pieces whose heights overlap by at least half of the smaller one, top to bottom.
+fn visual_rows(mut items: Vec<&Piece>) -> Vec<Row<'_>> {
     items.sort_by(|a, b| (b.y + b.height).total_cmp(&(a.y + a.height)));
     let mut rows: Vec<Row> = Vec::new();
     for item in items {
@@ -293,6 +354,22 @@ fn form_rows(mut items: Vec<&Piece>) -> Option<String> {
             }),
         }
     }
+    rows
+}
+
+/// A page's text read row by row, if the page looks like a form grid: at least 5 rows, and at least a third of
+/// them a short label (≤ 40 characters) with more text well to its right. Each row becomes a line
+/// "label: value"; rows further apart than two lines start a new paragraph.
+fn form_rows(items: Vec<&Piece>) -> Option<String> {
+    // The page's usual type size: gaps and headings are measured in it.
+    let mut sizes: Vec<f32> = items
+        .iter()
+        .filter(|i| !i.field)
+        .map(|i| i.height)
+        .collect();
+    sizes.sort_by(f32::total_cmp);
+    let line = sizes.get(sizes.len() / 2).copied().unwrap_or(10.0).max(1.0);
+    let mut rows = visual_rows(items);
     // A label's value starts at least two type sizes to its right (digits spaced out to fit boxes are closer).
     let gap = 2.0 * line;
     let gap_after =
@@ -607,6 +684,36 @@ mod tests {
         assert!(
             sentences.contains(&"1.2 Date of birth: 12.03.1985".to_string()),
             "{sentences:?}"
+        );
+    }
+
+    #[test]
+    fn a_text_form_keeps_one_row_per_line() {
+        let pdf = crate::test_pdf::pdf(&[&[
+            "# Garden club membership",
+            "Member name: Robin Example",
+            "Member address: 12 Fern Lane, Leafton",
+            "Club address: 3 Orchard Road, Mossbury",
+            "Phone: 0151 2345678",
+            "Yearly fee: 45 Euro",
+            "Plot number: 17",
+        ]]);
+        let pages = pdf_pages(&pdf).unwrap();
+        let chunks = chunks(&[(1, pages[0].1.as_str())], Chunking::Paragraph);
+        let sentences: Vec<String> = chunks.iter().flat_map(|c| sentences_of(&c.text)).collect();
+        assert!(
+            sentences.contains(&"Club address: 3 Orchard Road, Mossbury".to_string()),
+            "{sentences:?}"
+        );
+        // Prose with colons in it stays one paragraph.
+        let pdf = crate::test_pdf::pdf(&[&[
+            "Note: the garden opens at dawn. Rule: no fires at any time. Fee: paid in March.",
+            "Late payers: a reminder follows. Then: the plot may be given to the next member.",
+        ]]);
+        let page = &pdf_pages(&pdf).unwrap()[0].1;
+        assert!(
+            page.split("\n\n").all(|par| !par.trim().contains('\n')),
+            "{page:?}"
         );
     }
 

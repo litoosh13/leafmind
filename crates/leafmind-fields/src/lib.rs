@@ -75,6 +75,11 @@ pub struct Options {
     /// boxes, above all on filled scans. Blind test of public forms: fields found 87.4 % → 90.6 % (filled real
     /// scans 102 → 115 of 128), wrong boxes 89 → 194; three model runs per page instead of one.
     pub tiles: bool,
+    /// Return no fields on a page that is no form: one with fewer than 3 fields scoring 0.3 or more. Plain text
+    /// pages (reports, papers, contracts) otherwise get a few weak boxes now and then. Test of 590 text pages
+    /// and 55 form pages, each also scanned: text pages with any box 141 → 39 of 1,180 (most of those left have
+    /// checkboxes or empty table columns), fields found on public forms unchanged (88.4 %).
+    pub page_check: bool,
 }
 
 impl Default for Options {
@@ -86,6 +91,7 @@ impl Default for Options {
             min_score: 0.2,
             max_overlap: 0.6,
             tiles: true,
+            page_check: true,
         }
     }
 }
@@ -197,6 +203,9 @@ impl FieldFinder {
             }
         }
         let mut fields = merge(found, options);
+        if options.page_check && fields.iter().filter(|f| f.score >= 0.3).count() < 3 {
+            return Ok(Vec::new());
+        }
         if let Some(state) = &self.state {
             for field in &mut fields {
                 field.filled = Some(filled(state, rgba, width, height, &field.bounds)?);

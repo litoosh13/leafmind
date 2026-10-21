@@ -121,7 +121,10 @@ impl Model {
         let mut scores = Vec::with_capacity(sentences.len());
         let mut session = self.session.lock().unwrap();
         for sentence in sentences {
-            let (b, l, ids, mask) = self.encode(vec![(question, sentence.text.as_str())])?;
+            let (b, l, ids, mask) = self.encode(vec![(
+                question,
+                &*crate::flow::scoring_text(&sentence.text),
+            )])?;
             let outputs = session
                 .run(ort::inputs![
                     "input_ids" => Tensor::from_array(([b, l], ids)).map_err(model_error)?,

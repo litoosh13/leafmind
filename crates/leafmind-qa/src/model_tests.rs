@@ -226,3 +226,19 @@ fn a_saved_document_answers_the_same() {
     let err = engine().load_document(&other).unwrap_err().to_string();
     assert!(err.contains("another embedder"), "{err}");
 }
+
+#[test]
+#[ignore = "needs the ONNX models and ONNX Runtime (LEAFMIND_QA_MODELS, LEAFMIND_ORT)"]
+fn a_form_with_capital_labels_answers_with_its_rows() {
+    // An invented form page as OCR gives it: one row per line, labels in capitals.
+    let page = "GARDEN CLUB REGISTRATION\nMEMBER NAME: Robin Example\nPREFERRED NAME: Robin\n\n\
+                CLUB INFORMATION\nCLUB NAME: Mossbury Allotment Society - North Field\n\
+                CLUB ADDRESS: 3 Orchard Road, Mossbury, MB 40210\n\n\
+                PLOT SIZE: Half plot\nSTART OF SEASON: 1 March 2027\nYEARLY FEE: 45 Euro";
+    let doc = engine().index_pages(&[(1, page)]).unwrap();
+    found(&doc, "Club address?", "3 Orchard Road");
+    found(&doc, "What is the club address?", "3 Orchard Road");
+    found(&doc, "Yearly fee?", "45 Euro");
+    found(&doc, "How much is the yearly fee?", "45 Euro");
+    not_found(&doc, "What is the member's email address?");
+}

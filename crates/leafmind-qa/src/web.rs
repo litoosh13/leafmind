@@ -195,7 +195,12 @@ impl Inner {
     async fn rerank(&self, question: &str, sentences: &[Passage]) -> Result<Vec<f64>, JsValue> {
         let ids = sentences
             .iter()
-            .map(|s| encode(&self.rerank_tokenizer, (question, s.text.as_str())))
+            .map(|s| {
+                encode(
+                    &self.rerank_tokenizer,
+                    (question, &*flow::scoring_text(&s.text)),
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let logits = call(&self.rerank, &ids).await?;
         if logits.len() != ids.len() {

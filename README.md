@@ -68,7 +68,10 @@ for field in finder.find(page.as_raw(), page.width(), page.height())? {
 ```
 
 Create the finder once and reuse it. `find_with` takes `Options` (threshold, and `tiles: false` for about
-twice the speed at fewer fields found).
+twice the speed at fewer fields found). A page that is no form (fewer than 3 fields scoring 0.3 or more) gets no
+fields, so plain text pages stay clean: on 1,180 text pages (reports, papers, contracts; clean and scanned) pages
+with any field 141 → 39, fields found on public forms unchanged; `page_check: false` turns this off. Each field also
+has its `score` (0–1) to filter on.
 
 **In the browser:** unzip `leafmind-fields-wasm-<tag>.zip` from Releases (the package and both models) into
 your site:
@@ -121,7 +124,8 @@ leafmind-qa says "not in the document" rather than guess: when the best sentence
 `QaOptions::min_confidence` (0.5), or when another sentence scores almost as high (`min_gap`, 0.15). On a broad
 public benchmark this keeps about 1 in 15 shown answers wrong instead of 1 in 4; lower `min_gap` to show more
 answers and accept more wrong ones. In a form (at least 40 % of its sentences are short "label: value" rows), a
-row whose label the question names is answered even when other rows score almost as high (invented forms: 24 → 34
+row whose label the question names is answered even when other rows score almost as high, and from a score of
+0.4 when the question names the whole label; labels in capitals are scored in lower case (invented forms: 24 → 39
 of 80 answered, none wrong). To lower `min_gap`:
 
 ```rust
@@ -129,8 +133,9 @@ let qa = QaEngine::load(&models, QaOptions { min_gap: 0.1, ..Default::default() 
 ```
 
 To skip indexing when a document is opened again, keep its index as bytes (about 3 KB per chunk) and load it
-next time. Loading refuses bytes that are damaged, from another leafmind format, or made with another embedder
-model or chunking setting; then index the document again:
+next time. Loading refuses bytes that are damaged, from another leafmind format (it changes whenever leafmind
+reads documents differently, so an old index is never used with new reading), or made with another embedder model
+or chunking setting; then index the document again:
 
 ```rust
 let bytes = qa.save_document(&doc); // store it where your app keeps its cache

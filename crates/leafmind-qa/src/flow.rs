@@ -15,11 +15,17 @@ pub(crate) const TOP_CHUNKS: usize = 8;
 /// the forms rule made wrong answers); invented forms are around 0.75.
 const FORM_SHARE: f64 = 0.4;
 
+/// In a form, a row whose label the question names completely (every word but fillers) is answered from this
+/// reranker score on, below `min_confidence`: the reranker scores form rows low (0.4–0.5), all-caps labels lower.
+/// 0.4 added 13 right answers on invented scanned forms and none wrong on any of our sets; 0.3 made wrong ones.
+const NAMED_FLOOR: f64 = 0.4;
+
 #[derive(Clone, Copy, Debug)]
 pub struct QaOptions {
     /// CPU threads per model; 0 = half the logical CPUs (about the physical cores). Native only.
     pub threads: usize,
-    /// Below this reranker score the answer is withheld ([`Answer::NotFound`]).
+    /// Below this reranker score the answer is withheld ([`Answer::NotFound`]); in a form, a row whose label the
+    /// question names completely needs only 0.4.
     pub min_confidence: f64,
     /// The answer is also withheld when another sentence scores almost as high: the answer's score must
     /// beat the best sentence outside the answer by at least this much. 0.15 cut the wrong answers shown on a
@@ -206,8 +212,9 @@ fn same_word(a: &str, b: &str) -> bool {
     a.chars().take(n).eq(b.chars().take(n))
 }
 
-/// The best-scoring form row ("label: value") that reaches `min_confidence` and whose label the question names:
-/// at least half of the label's words are in the question. Form rows score close to each other with the reranker,
+/// The best-scoring form row ("label: value") whose label the question names: at least half of the label's
+/// words (fillers like "of", "der" aside) are in the question, and its score reaches `min_confidence`, or
+/// [`NAMED_FLOOR`] when the question names all of them. Form rows score close to each other with the reranker,
 /// so the gap rule withholds them; the label says which row is asked for.
 fn form_row(
     question: &str,
@@ -224,14 +231,25 @@ fn form_row(
         let Some((label, _)) = s.text.split_once([':', '：']) else {
             continue;
         };
-        let label = words(label);
-        if !text::is_label_value(&s.text) || label.is_empty() || scores[i] < min_confidence {
+        let label: Vec<String> = words(label)
+            .into_iter()
+            .filter(|w| !ASKING.contains(&w.as_str()))
+            .collect();
+        if !text::is_label_value(&s.text) || label.is_empty() {
             continue;
         }
         let named = label
             .iter()
             .filter(|l| asked.iter().any(|q| same_word(l, q)))
             .count();
+        let floor = if named == label.len() {
+            min_confidence.min(NAMED_FLOOR)
+        } else {
+            min_confidence
+        };
+        if scores[i] < floor {
+            continue;
+        }
         if 2 * named >= label.len() && best.is_none_or(|b| scores[i] > scores[b]) {
             best = Some(i);
         }
@@ -272,18 +290,43 @@ mod tests {
             Answer::Found { sentences, .. } => assert_eq!(sentences[0].text, "2.2 Plot size: 250"),
             other => panic!("{other:?}"),
         }
+        // A completely named label from 0.4 on, below min_confidence.
+        assert!(matches!(
+            decide(&options, true, "What is the plot size?", &[0.3, 0.42, 0.35], &s),
+            Answer::Found { confidence, .. } if confidence == 0.42
+        ));
+        assert!(matches!(
+            decide(
+                &options,
+                true,
+                "What is the plot size?",
+                &[0.3, 0.38, 0.35],
+                &s
+            ),
+            Answer::NotFound { .. }
+        ));
+        // Labels in capitals are scored in lower case.
+        assert_eq!(
+            scoring_text("CLUB ADDRESS: 3 Orchard Road"),
+            "club address: 3 Orchard Road"
+        );
+        assert_eq!(
+            scoring_text("Club address: 3 Orchard Road"),
+            "Club address: 3 Orchard Road"
+        );
+        assert_eq!(scoring_text("THE RENT IS DUE."), "THE RENT IS DUE.");
         // Not in a document that is no form.
         assert!(matches!(
             decide(&options, false, "How big is the plot size?", &scores, &s),
             Answer::NotFound { .. }
         ));
-        // Of two named rows the better-scoring one; below min_confidence never.
+        // Of two named rows the better-scoring one; a half-named label never below min_confidence.
         assert!(matches!(
             decide(&options, true, "Requested plot size?", &[0.57, 0.45, 0.55], &s),
             Answer::Found { confidence, .. } if confidence == 0.57
         ));
         assert!(matches!(
-            decide(&options, true, "Plot size?", &[0.4, 0.45, 0.42], &s),
+            decide(&options, true, "Requested plot?", &[0.45, 0.3, 0.42], &s),
             Answer::NotFound { .. }
         ));
     }
@@ -313,5 +356,20 @@ mod form_tests {
             "The lease runs for two years. Rent is due monthly. Parking is extra.",
             "Note: the garden closes at dusk."
         ]));
+    }
+}
+
+/// The text the reranker scores: a form row's label in capitals ("CLUB ADDRESS: …") is scored in lower case
+/// ("club address: …"); the reranker scores capitals much lower (0.30 against 0.54 for the same row).
+pub(crate) fn scoring_text(text: &str) -> std::borrow::Cow<'_, str> {
+    match text.split_once([':', '：']) {
+        Some((label, _))
+            if text::is_label_value(text)
+                && label.chars().filter(|c| c.is_alphabetic()).count() >= 2
+                && !label.chars().any(char::is_lowercase) =>
+        {
+            format!("{}{}", label.to_lowercase(), &text[label.len()..]).into()
+        }
+        _ => text.into(),
     }
 }

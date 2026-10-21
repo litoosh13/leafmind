@@ -12,6 +12,7 @@ const CARD: Options = Options {
     min_score: 0.3,
     max_overlap: 0.6,
     tiles: false,
+    page_check: false,
 };
 
 fn root() -> &'static str {
@@ -162,4 +163,16 @@ fn tells_filled_from_empty() {
 #[test]
 fn rejects_wrong_image_size() {
     assert!(finder().find(&[0u8; 10], 2, 2).is_err());
+}
+
+#[test]
+fn the_page_check_keeps_a_form_and_empties_a_blank_page() {
+    let finder = finder();
+    let image = image::open(format!("{}/tests/data/library-card.png", root()))
+        .unwrap()
+        .to_rgba8();
+    let (w, h) = image.dimensions();
+    assert!(finder.find(image.as_raw(), w, h).unwrap().len() >= 3);
+    let blank = vec![255u8; 4 * 1280 * 1810];
+    assert!(finder.find(&blank, 1280, 1810).unwrap().is_empty());
 }
