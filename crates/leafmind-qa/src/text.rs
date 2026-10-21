@@ -284,24 +284,31 @@ fn maybe_rows(par: &str) -> bool {
 /// of them are short form rows ("label: value", value ≤ 60 characters); otherwise `None` (prose with colons
 /// stays one paragraph).
 fn split_at_lines(par: &str, lines: &[String]) -> Option<String> {
-    let clean = strip_markup(par);
-    let words: Vec<&str> = clean.split_whitespace().collect();
-    let line_words: Vec<Vec<&str>> = lines
-        .iter()
-        .map(|l| l.split_whitespace().collect())
-        .collect();
-    let starts = |at: usize, line: &[&str]| !line.is_empty() && words[at..].starts_with(line);
-    let first = (0..lines.len()).find(|&r| starts(0, &line_words[r]))?;
+    // Compared by letters and digits only: pdf-inspector and the printed lines may space or join words
+    // differently ("REGISTRATION-not" / "REGISTRATION - not").
+    let key = |t: &str| -> Vec<char> {
+        t.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let text = key(&strip_markup(par));
+    let keys: Vec<Vec<char>> = lines.iter().map(|l| key(l)).collect();
+    let starts = |at: usize, line: &[char]| !line.is_empty() && text[at..].starts_with(line);
+    let first = (0..lines.len()).find(|&r| starts(0, &keys[r]))?;
     let (mut at, mut out) = (0, Vec::new());
-    for line in &line_words[first..] {
-        if at == words.len() {
+    for (line, k) in lines[first..].iter().zip(&keys[first..]) {
+        if at == text.len() {
             break;
         }
-        if !starts(at, line) {
+        if k.is_empty() {
+            continue;
+        }
+        if !starts(at, k) {
             return None;
         }
-        at += line.len();
-        out.push(line.join(" "));
+        at += k.len();
+        out.push(line.split_whitespace().collect::<Vec<_>>().join(" "));
     }
     let rows = out
         .iter()
@@ -311,7 +318,7 @@ fn split_at_lines(par: &str, lines: &[String]) -> Option<String> {
                     .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
         })
         .count();
-    (at == words.len() && rows >= 3 && 2 * rows >= out.len()).then(|| out.join("\n"))
+    (at == text.len() && rows >= 3 && 2 * rows >= out.len()).then(|| out.join("\n"))
 }
 
 /// A piece of text on a page: its box in PDF points (y grows upward, `y` is the bottom) and whether it is the
@@ -705,6 +712,18 @@ mod tests {
             sentences.contains(&"Club address: 3 Orchard Road, Mossbury".to_string()),
             "{sentences:?}"
         );
+        // pdf-inspector may join words differently from the printed lines; the split still finds the rows.
+        let lines: Vec<String> = [
+            "CLUB REGISTRATION - sample",
+            "MEMBER NAME: Robin Example",
+            "CLUB ADDRESS: 3 Orchard Road, Mossbury",
+            "YEARLY FEE: 45 Euro",
+        ]
+        .map(String::from)
+        .to_vec();
+        let par = "CLUB REGISTRATION-sample MEMBER NAME: Robin Example CLUB ADDRESS: 3 Orchard Road, Mossbury \
+                   YEARLY FEE: 45 Euro";
+        assert_eq!(split_at_lines(par, &lines), Some(lines.join("\n")));
         // Prose with colons in it stays one paragraph.
         let pdf = crate::test_pdf::pdf(&[&[
             "Note: the garden opens at dawn. Rule: no fires at any time. Fee: paid in March.",

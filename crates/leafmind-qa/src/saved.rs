@@ -12,8 +12,8 @@ use crate::{Error, Passage};
 const MAGIC: &[u8; 4] = b"LMQA";
 /// Raise when the layout or the meaning of a saved field changes, and when reading a PDF or cutting it into
 /// chunks gives other chunks (a saved document keeps the chunks; old ones would not match the new reading).
-/// 2: text forms keep their rows as lines (0.8.0).
-const FORMAT: u32 = 2;
+/// 2: text forms keep their rows as lines (0.8.0). 3: also when pdf-inspector spaces words differently (0.8.1).
+const FORMAT: u32 = 3;
 
 /// What a saved document depends on: it can only be used with the same embedder and chunking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
