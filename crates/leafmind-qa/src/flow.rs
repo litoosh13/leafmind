@@ -145,47 +145,9 @@ pub(crate) fn candidates(doc: &Document, question: &str, question_vector: &[f32]
     } else {
         search::rrf(&[&similarity])
     };
-    // RESEARCH-TMP LM_CANDDUMP: the 30 best chunks in order (removed after the long-document study).
-    if let Ok(f) = std::env::var("LM_CANDDUMP") {
-        use std::io::Write;
-        let chunks: Vec<&str> = search::order(&fused)
-            .into_iter()
-            .take(30)
-            .map(|i| doc.chunks[i].text.as_str())
-            .collect();
-        let pages: Vec<u32> = search::order(&fused)
-            .into_iter()
-            .take(30)
-            .map(|i| doc.chunks[i].page)
-            .collect();
-        let line = format!(
-            "{{\"question\":{:?},\"chunks\":{:?},\"pages\":{:?},\"n_chunks\":{}}}\n",
-            question,
-            chunks,
-            pages,
-            doc.chunks.len()
-        );
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(format!("{f}.chunks"))
-            .unwrap()
-            .write_all(line.as_bytes())
-            .unwrap();
-    }
-    // RESEARCH-TMP LM_TOP / LM_TOP_LONG: chunks for the reranker (LM_TOP_LONG when the document has > 40 chunks).
-    let n_top = match (
-        std::env::var("LM_TOP_LONG")
-            .ok()
-            .and_then(|v| v.parse().ok()),
-        doc.chunks.len() > 40,
-    ) {
-        (Some(n), true) => n,
-        _ => TOP_CHUNKS,
-    };
     let top: Vec<&Passage> = search::order(&fused)
         .into_iter()
-        .take(n_top)
+        .take(TOP_CHUNKS)
         .map(|i| &doc.chunks[i])
         .collect();
     text::sentences(&top)
@@ -201,27 +163,6 @@ pub(crate) fn decide(
     scores: &[f64],
     sentences: &[Passage],
 ) -> Answer {
-    // RESEARCH-TMP LM_CANDDUMP: candidates with scores.
-    if let Ok(f) = std::env::var("LM_CANDDUMP") {
-        use std::io::Write;
-        let c: Vec<String> = sentences
-            .iter()
-            .zip(scores)
-            .map(|(s, sc)| format!("[{:?},{},{}]", s.text, s.page, sc))
-            .collect();
-        let line = format!(
-            "{{\"question\":{:?},\"cands\":[{}]}}\n",
-            question,
-            c.join(",")
-        );
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(format!("{f}.cands"))
-            .unwrap()
-            .write_all(line.as_bytes())
-            .unwrap();
-    }
     let picked = search::pick(scores, sentences);
     let confidence = picked.first().map_or(0.0, |&i| scores[i]);
     let clear = search::gap(scores, &picked, sentences) >= options.min_gap;
