@@ -1070,6 +1070,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "leafmind-fill"
+version = "0.8.1"
+dependencies = [
+ "leafmind-fields",
+ "libloading",
+ "ort",
+ "regex",
+ "serde_json",
+ "tokenizers",
+]
+
+[[package]]
 name = "leafmind-ocr"
 version = "0.8.1"
 dependencies = [

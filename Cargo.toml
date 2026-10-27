@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/leafmind-fields", "crates/leafmind-ocr", "crates/leafmind-qa"]
+members = ["crates/leafmind-fields", "crates/leafmind-fill", "crates/leafmind-ocr", "crates/leafmind-qa"]
 exclude = ["third_party/pdf-inspector"]
 
 [workspace.package]
@@ -22,6 +22,8 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 # top-level project).
 pdf-inspector = { path = "third_party/pdf-inspector", default-features = false }
 regex = "1"
+# Reads the Needle engine's JSON answers (leafmind-fill).
+serde_json = "1"
 # Regex backend chosen per build in leafmind-qa: "onig" (C) natively, "unstable_wasm" (pure Rust) for the browser.
 tokenizers = { version = "0.23", default-features = false }
 tract-onnx = "0.23"

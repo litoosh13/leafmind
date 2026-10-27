@@ -18,8 +18,11 @@ use std::fmt;
 use std::sync::Arc;
 use tract_onnx::prelude::*;
 
+mod labels;
 #[cfg(feature = "wasm")]
 mod wasm;
+
+pub use labels::{LabelFor, Word, field_context, field_labels, tooltip_label};
 
 /// Side of the square image the model looks at.
 const SIZE: u32 = 640;

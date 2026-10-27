@@ -163,3 +163,18 @@ it reads exactly the same text as Homebrew's Tesseract 5.5.3, slightly faster (1
 **Linux** — distributions package Tesseract 5 (Debian/Ubuntu `libtesseract5`, Fedora `tesseract-libs`); an app
 can depend on that package and give leafmind its path (e.g. `/usr/lib/x86_64-linux-gnu/libtesseract.so.5`), or
 bundle the libraries. Tested in CI on Ubuntu (`libtesseract5`).
+
+## Fill commands: Needle (not in the repository; the app ships it for `leafmind-fill`)
+
+- **Base:** https://huggingface.co/Cactus-Compute/needle3, revision `b274efcb` (121M parameters, Apache-2.0), by
+  Cactus Compute.
+- **Engine:** Cactus 3.2.0 (Apache-2.0), loaded at run time; the library is inside the platform wheels
+  `python/cactus_needle-3.2.0-py3-none-<platform>.whl` of the same repository. Tested: macOS arm64
+  `libneedle.dylib` (1,070,448 bytes) — `6794ef011da58f6138a2c1e7103dcb73b401ddfb9aa67cc28b31fadded7ff780`. It
+  links only the system libraries and has no network code (Cactus's Python package, not used by leafmind, sends
+  usage counts unless `NEEDLE_TELEMETRY=0`).
+- **Fine-tune:** https://huggingface.co/litoo13/leafmind-fill-needle, revision
+  `c52f3d0a11f38e6a01d094090501a35c90f2882b`: leafmind's LoRA fine-tune (rank 32, 2 epochs) on 6,000 invented
+  form-fill examples (made-up forms, labels and values; no real documents or personal data).
+- **File:** `fill.cact` (63,437,076 bytes) — `6198a4579107fc6b0546816a547f6c8594979ba2ebe33a4a4b2c8643536c35fd`
+- **Licence:** Apache License 2.0, like the base ([models/LICENSE-APACHE-2.0](models/LICENSE-APACHE-2.0)).
