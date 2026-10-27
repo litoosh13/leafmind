@@ -179,7 +179,12 @@ pub(crate) fn copy_from(form: &Form, to: Vec<Candidate>, from: Vec<Candidate>) -
     Proposal::Actions(vec![Action {
         field: id(t),
         change: Change::CopyFrom(id(&s)),
-        alternatives: to[1..].iter().take(2).map(id).collect(),
+        alternatives: to[1..]
+            .iter()
+            .filter(|c| c.field != s.field)
+            .take(2)
+            .map(id)
+            .collect(),
     }])
 }
 
@@ -232,6 +237,73 @@ pub(crate) fn after_rank(form: &Form, command: &str, today: &str, all: Vec<Candi
     Next::Ask(ask)
 }
 
+/// A sentence that may be about several fields ("name Robin Example, mobile 0170 1112223"): its parts at ", ", "; ",
+/// "and" or "plus", to propose one by one and [`merge`]. Only when the proposal is one fill (Needle often copies the
+/// rest of the sentence into its value), there is a separator (not the comma in "1,200"), and the sentence is not
+/// one "label: value".
+pub(crate) fn parts<'c>(command: &'c str, p: &Proposal) -> Option<Vec<&'c str>> {
+    static SEP: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)\s*(?:[,;]\s|\band\b|\bplus\b)\s*").unwrap()
+    });
+    // One "label: value" is one field, whatever its label or value holds ("city, state and ZIP: …").
+    if command.matches(':').count() == 1 {
+        return None;
+    }
+    let fill =
+        matches!(p, Proposal::Actions(a) if a.len() == 1 && matches!(a[0].change, Change::Fill(_)));
+    let parts: Vec<&str> = SEP
+        .split(command)
+        .filter(|p| !p.trim().is_empty())
+        .collect();
+    (fill && parts.len() >= 2).then_some(parts)
+}
+
+/// Lowercase letters and digits of each word.
+fn keys(s: &str) -> Vec<String> {
+    s.split_whitespace()
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .flat_map(char::to_lowercase)
+                .collect::<String>()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// The parts' proposals as one: each part gave exactly one action, all fields differ, and each part names its field
+/// (a word of the part outside its value is a word of the field's surroundings: "mobile" for "Mobile phone"), so
+/// "12 Oak Street, Apt 4" stays one value.
+pub(crate) fn merge(form: &Form, parts: &[&str], proposals: Vec<Proposal>) -> Option<Proposal> {
+    const FILLER: [&str; 10] = [
+        "the", "my", "our", "is", "are", "was", "of", "to", "a", "an",
+    ];
+    let mut actions: Vec<Action> = vec![];
+    for (part, p) in parts.iter().zip(proposals) {
+        let Proposal::Actions(mut a) = p else {
+            return None;
+        };
+        if a.len() != 1 || actions.iter().any(|o| o.field == a[0].field) {
+            return None;
+        }
+        let value = match &a[0].change {
+            Change::Fill(v) | Change::Choose(v) => keys(v),
+            _ => vec![],
+        };
+        let field = form.fields.iter().find(|f| f.id == a[0].field)?;
+        let around: Vec<String> = field.texts.iter().flat_map(|(_, t, _)| keys(t)).collect();
+        let names = keys(part)
+            .iter()
+            .filter(|w| !value.contains(w) && !FILLER.contains(&w.as_str()))
+            .any(|w| around.contains(w));
+        if !names {
+            return None;
+        }
+        actions.push(a.remove(0));
+    }
+    Some(Proposal::Actions(actions))
+}
+
 /// The proposal from Needle's JSON `answer`, with the app's field ids.
 pub(crate) fn finish(form: &Form, command: &str, today: &str, ask: &Ask, answer: &str) -> Proposal {
     let calls = decide::calls(answer, &ask.cands, &ask.labels);
@@ -282,6 +354,98 @@ pub(crate) fn system(secs: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_from_never_offers_its_source() {
+        let field = |id| Prepared {
+            id,
+            group: Group::Text,
+            options: vec![],
+            read_only: false,
+            texts: vec![],
+        };
+        let form = Form::new(vec![field(10), field(11), field(12)], vec![]);
+        let cand = |field, score| Candidate {
+            field,
+            group: Group::Text,
+            score,
+            text: String::new(),
+            options: vec![],
+        };
+        // "mailing address same as home address": target 0, source 1, which also ranks second for the target.
+        let p = copy_from(
+            &form,
+            vec![cand(0, 0.9), cand(1, 0.8), cand(2, 0.7)],
+            vec![cand(1, 0.9), cand(0, 0.5)],
+        );
+        assert_eq!(
+            p,
+            Proposal::Actions(vec![Action {
+                field: 10,
+                change: Change::CopyFrom(11),
+                alternatives: vec![12],
+            }])
+        );
+    }
+
+    #[test]
+    fn sentences_split_only_into_parts_that_name_their_field() {
+        let field = |id, label: &str| Prepared {
+            id,
+            group: Group::Text,
+            options: vec![],
+            read_only: false,
+            texts: vec![(1.0, label.into(), 0)],
+        };
+        let form = Form::new(
+            vec![
+                field(1, "Full name"),
+                field(2, "Mobile phone"),
+                field(3, "Postcode and city"),
+            ],
+            vec![],
+        );
+        let fill = |field, v: &str| {
+            Proposal::Actions(vec![Action {
+                field,
+                change: Change::Fill(v.into()),
+                alternatives: vec![],
+            }])
+        };
+        let cmd = "name Robin Example, mobile 0170 1112223";
+        let parts_of = parts(cmd, &fill(2, "Robin Example, mobile 0170 1112223")).unwrap();
+        assert_eq!(parts_of, vec!["name Robin Example", "mobile 0170 1112223"]);
+        let merged = merge(
+            &form,
+            &parts_of,
+            vec![fill(1, "Robin Example"), fill(2, "0170 1112223")],
+        );
+        assert!(matches!(merged, Some(Proposal::Actions(a)) if a.len() == 2));
+        // "Apt 4" names no field: the address stays one value.
+        let addr = ["home address 12 Oak Street", "Apt 4"];
+        assert_eq!(
+            merge(
+                &form,
+                &addr,
+                vec![fill(1, "12 Oak Street"), fill(3, "Apt 4")]
+            ),
+            None
+        );
+        assert_eq!(
+            merge(&form, &parts_of, vec![fill(1, "a"), fill(1, "b")]),
+            None
+        );
+        assert_eq!(parts("tick A and B", &Proposal::NoSuchField), None);
+        assert_eq!(parts("my name is Robin", &fill(1, "Robin")), None);
+        assert_eq!(parts("deductions 3,000", &fill(1, "3,000")), None);
+        assert_eq!(
+            parts("city, state and ZIP: Dayton, OH", &fill(1, "Dayton, OH")),
+            None
+        );
+        assert!(parts("name: Robin, phone: 555 0100", &fill(1, "Robin")).is_some());
+    }
+
     #[test]
     fn system_date_line() {
         assert_eq!(super::system(0), "date: 1970-01-01 Thu 00:00");

@@ -49,7 +49,7 @@ libraries below and tells leafmind where they are.
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
 | `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
-| `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB). In the browser: ONNX Runtime Web 1.30, the q4f16 `gte-embed/`, Needle's browser engine (`needle.js`, `needle.wasm`) and `fill.cact` | `fill.cact` and the browser engine: `scripts/fetch-qa-models.sh <dir> fill`; gte: as for `leafmind-qa`; Needle's native engine: inside `python/cactus_needle-3.2.0-py3-none-<platform>.whl` (a zip) in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3), published for macOS (Apple silicon and Intel), Windows and Linux (x86-64 and ARM); browser package: `leafmind-fill-wasm-<tag>.zip` from Releases |
+| `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB). In the browser: ONNX Runtime Web 1.30, the q4f16 `gte-embed/`, Needle's browser engine (`needle.js`, `needle.wasm`) and `fill.cact` | `fill.cact` and the browser engine: `scripts/fetch-qa-models.sh <dir> fill`; gte: as for `leafmind-qa`; Needle's native engine: `scripts/fetch-qa-models.sh <dir> needle-<platform>` unpacks `libneedle3.dylib` / `.so` / `.dll` from Cactus's 3.2.0 wheel in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3) (macOS Apple silicon and Intel, Windows and Linux, x86-64 and ARM); browser package: `leafmind-fill-wasm-<tag>.zip` from Releases |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
@@ -214,7 +214,7 @@ use leafmind_fill::{FieldKind, FillEngine, FillModels, FormField, PageWords, Pro
 let fill = FillEngine::load(&FillModels {
     onnxruntime: "libs/libonnxruntime.dylib".into(),
     embedder: "models/qa/gte-embed".into(),
-    needle_library: "libs/libneedle.dylib".into(), // libneedle.so, needle.dll
+    needle_library: "libs/libneedle3.dylib".into(), // libneedle3.so, libneedle3.dll
     needle_model: "models/fill.cact".into(),
 })?;
 
@@ -247,7 +247,8 @@ match fill.propose(&form, "my phone number is 0151 2345678", "10/27/2026")? {
 
 `Change` is `Fill(text)`, `Check(bool)`, `Choose(option)`, `Clear` or `CopyFrom(field)` ("mailing address same as
 home address": write that field's current value). The last argument is today's date as the form should get it, for
-"the date is today". Signatures ("sign the form") are not proposed. English only for now. leafmind reads the labels
+"the date is today". A sentence about several fields ("name Robin Example, mobile 0170 1112223") gives one action
+per field when each part names its field with a word of its label. Signatures ("sign the form") are not proposed. English only for now. leafmind reads the labels
 from the words around each field and from tooltips, so words from the PDF's text layer (or from OCR for a scan)
 matter. The proposals can be wrong: always show them before writing. Needle's engine holds one model for the whole
 process, so load one `FillEngine`.
@@ -304,7 +305,7 @@ engine library and `fill.cact`:
 
 ```bash
 LEAFMIND_QA_MODELS=$PWD/models/qa LEAFMIND_ORT=/path/to/libonnxruntime.dylib \
-    LEAFMIND_NEEDLE=/path/to/libneedle.dylib LEAFMIND_FILL_MODEL=/path/to/fill.cact \
+    LEAFMIND_NEEDLE=/path/to/libneedle3.dylib LEAFMIND_FILL_MODEL=/path/to/fill.cact \
     cargo test -p leafmind-fill --release -- --ignored
 ```
 

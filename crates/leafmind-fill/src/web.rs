@@ -85,6 +85,25 @@ impl FillWeb {
 
 impl Inner {
     async fn propose(&self, form: &Form, command: &str, today: &str) -> Result<Proposal, JsValue> {
+        let p = self.propose_one(form, command, today).await?;
+        if let Some(parts) = flow::parts(command, &p) {
+            let mut each = vec![];
+            for part in &parts {
+                each.push(self.propose_one(form, part, today).await?);
+            }
+            if let Some(merged) = flow::merge(form, &parts, each) {
+                return Ok(merged);
+            }
+        }
+        Ok(p)
+    }
+
+    async fn propose_one(
+        &self,
+        form: &Form,
+        command: &str,
+        today: &str,
+    ) -> Result<Proposal, JsValue> {
         Ok(match flow::plan(command) {
             Plan::Done(p) => p,
             Plan::SameAs { target, source } => {

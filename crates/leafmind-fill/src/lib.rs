@@ -14,7 +14,7 @@
 //! let engine = FillEngine::load(&FillModels {
 //!     onnxruntime: "lib/libonnxruntime.dylib".into(),
 //!     embedder: "models/gte-embed".into(),
-//!     needle_library: "lib/libneedle.dylib".into(),
+//!     needle_library: "lib/libneedle3.dylib".into(),
 //!     needle_model: "models/fill.cact".into(),
 //! })?;
 //! # let (fields, pages): (Vec<FormField>, Vec<PageWords>) = (vec![], vec![]);

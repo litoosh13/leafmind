@@ -169,8 +169,9 @@ bundle the libraries. Tested in CI on Ubuntu (`libtesseract5`).
 - **Base:** https://huggingface.co/Cactus-Compute/needle3, revision `b274efcb` (121M parameters, Apache-2.0), by
   Cactus Compute.
 - **Engine:** Cactus 3.2.0 (Apache-2.0), loaded at run time; the library is inside the platform wheels
-  `python/cactus_needle-3.2.0-py3-none-<platform>.whl` of the same repository. Tested: macOS arm64
-  `libneedle.dylib` (1,070,448 bytes) — `6794ef011da58f6138a2c1e7103dcb73b401ddfb9aa67cc28b31fadded7ff780`. It
+  `python/cactus_needle-3.2.0-py3-none-<platform>.whl` of the same repository at revision
+  `d6c7d6a2e9655505e0f8e23339356dd1705900eb` (`scripts/fetch-qa-models.sh <dir> needle-<platform>` downloads the
+  wheel, checks its SHA-256 and unpacks the library). Tested: macOS arm64 `libneedle3.dylib` (1,070,448 bytes) — `6794ef011da58f6138a2c1e7103dcb73b401ddfb9aa67cc28b31fadded7ff780`. It
   links only the system libraries and has no network code (Cactus's Python package, not used by leafmind, sends
   usage counts unless `NEEDLE_TELEMETRY=0`).
 - **Browser engine:** the same repository at revision `d6c7d6a2e9655505e0f8e23339356dd1705900eb`, `wasm/needle.js`

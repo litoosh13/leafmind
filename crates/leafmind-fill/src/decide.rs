@@ -264,6 +264,32 @@ fn value(
     }
 }
 
+/// `command` without its leading words that name the field ("name Robin Example" with the label "Full name" →
+/// "Robin Example"): words of `label` and filler words, compared without case and punctuation. `None` when no such
+/// word leads or nothing would be left.
+fn after_label(command: &str, label: &str) -> Option<String> {
+    let key = |w: &str| {
+        w.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    let label: Vec<String> = label.split_whitespace().map(key).collect();
+    const FILLER: [&str; 10] = [
+        "the", "my", "our", "a", "an", "is", "are", "was", "of", "for",
+    ];
+    let words: Vec<&str> = command.split_whitespace().collect();
+    let skip = words
+        .iter()
+        .take_while(|w| {
+            let k = key(w);
+            !k.is_empty() && (label.contains(&k) || FILLER.contains(&k.as_str()))
+        })
+        .count();
+    let named = words[..skip].iter().any(|w| label.contains(&key(w)));
+    (named && skip < words.len()).then(|| words[skip..].join(" "))
+}
+
 /// The best candidate of `group` with the next two as alternatives (candidates sorted best first).
 fn best_of(cands: &[Candidate], group: Group) -> Option<(usize, Vec<usize>)> {
     let mut of = cands
@@ -382,7 +408,9 @@ pub(crate) fn decide(
         Some(Call::Fill { value, .. }) => Some(value.as_str()),
         _ => None,
     };
-    match value(command, needle, held_back, today) {
+    let found = value(command, needle, held_back, today)
+        .or_else(|| after_label(command, &cands[best].text));
+    match found {
         Some(v) => Proposal::Actions(vec![action(best, Change::Fill(v), alternatives)]),
         None => Proposal::NoValue {
             candidates: std::iter::once(best)
@@ -493,6 +521,8 @@ mod tests {
         assert_eq!(v("my phone number is 555 0100"), "555 0100");
         assert_eq!(v("phone 555 0100"), "555 0100");
         assert_eq!(v("the date is today"), "10/27/2026");
+        // Nothing marks the value: the words after the field's label.
+        assert_eq!(v("full name Robin Example"), "Robin Example");
         // A tick word makes it a tick, on the best checkbox; "untick" unticks.
         assert_eq!(
             one(decide("tick I agree", "", &c, &[], None)).change,

@@ -1,7 +1,7 @@
 //! Tests with the real models, on one invented club membership form (words and boxes made here).
 //!
 //! Run: `LEAFMIND_QA_MODELS=<dir with gte-embed/> LEAFMIND_ORT=<onnxruntime library>
-//! LEAFMIND_NEEDLE=<libneedle library> LEAFMIND_FILL_MODEL=<fill.cact> cargo test -p leafmind-fill --release --
+//! LEAFMIND_NEEDLE=<libneedle3 library> LEAFMIND_FILL_MODEL=<fill.cact> cargo test -p leafmind-fill --release --
 //! --ignored` (gte: scripts/fetch-qa-models.sh; fill.cact: THIRD_PARTY.md).
 
 use crate::{
@@ -38,7 +38,7 @@ fn setup() -> &'static (FillEngine, Form) {
         let text = [
             "Full name:",
             "Date of birth:",
-            "Phone number:",
+            "Mobile phone number:",
             "Email address:",
             "Home address:",
             "Mailing address:",
@@ -141,6 +141,24 @@ fn fills_ticks_and_chooses() {
         "membership type: Family",
         10,
         Change::Choose("Family".into()),
+    );
+}
+
+#[test]
+#[ignore = "needs the models"]
+fn several_fields_in_one_sentence() {
+    match propose("name Robin Example, mobile 0170 1112223") {
+        Proposal::Actions(a)
+            if a.len() == 2
+                && (a[0].field, &a[0].change) == (0, &Change::Fill("Robin Example".into()))
+                && (a[1].field, &a[1].change) == (2, &Change::Fill("0170 1112223".into())) => {}
+        other => panic!("two fields: {other:?}"),
+    }
+    // One value with a comma stays one.
+    expect(
+        "home address: 12 Oak Street, Apt 4",
+        4,
+        Change::Fill("12 Oak Street, Apt 4".into()),
     );
 }
 

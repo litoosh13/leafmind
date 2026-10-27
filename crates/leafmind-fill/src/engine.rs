@@ -18,7 +18,7 @@ pub struct FillModels {
     pub onnxruntime: PathBuf,
     /// gte-multilingual-base, the same folder leafmind-qa uses (`model_int8.onnx`, `tokenizer.json`).
     pub embedder: PathBuf,
-    /// Needle's C engine: `needle.dll`, `libneedle.so` or `libneedle.dylib` (Cactus 3.2).
+    /// Needle's C engine: `libneedle3.dylib`, `libneedle3.so` or `libneedle3.dll` (Cactus 3.2; scripts/fetch-qa-models.sh).
     pub needle_library: PathBuf,
     /// The fine-tuned model `fill.cact`.
     pub needle_model: PathBuf,
@@ -192,8 +192,22 @@ impl FillEngine {
     }
 
     /// What `command` (English) would change. `today` is today's date as the form should get it ("10/27/2026").
-    /// About 0.1–0.2 s on a laptop.
+    /// About 0.1 s on a laptop (a sentence about several fields may take one run per field).
     pub fn propose(&self, form: &Form, command: &str, today: &str) -> Result<Proposal, Error> {
+        let p = self.propose_one(form, command, today)?;
+        if let Some(parts) = flow::parts(command, &p) {
+            let each = parts
+                .iter()
+                .map(|part| self.propose_one(form, part, today))
+                .collect::<Result<Vec<_>, _>>()?;
+            if let Some(merged) = flow::merge(form, &parts, each) {
+                return Ok(merged);
+            }
+        }
+        Ok(p)
+    }
+
+    fn propose_one(&self, form: &Form, command: &str, today: &str) -> Result<Proposal, Error> {
         let rank = |t: &str| Ok::<_, Error>(flow::rank(form, &self.embedder.embed(t)?));
         match flow::plan(command) {
             Plan::Done(p) => Ok(p),
