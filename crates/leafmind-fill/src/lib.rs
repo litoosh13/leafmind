@@ -29,12 +29,20 @@
 use std::fmt;
 
 mod decide;
+#[cfg(feature = "native")]
 mod engine;
-#[cfg(test)]
+mod flow;
+#[cfg(all(test, feature = "native"))]
 mod model_tests;
+#[cfg(feature = "wasm")]
+mod web;
 
-pub use engine::{FillEngine, FillModels, Form};
+#[cfg(feature = "native")]
+pub use engine::{FillEngine, FillModels};
+pub use flow::Form;
 pub use leafmind_fields::Word;
+#[cfg(feature = "wasm")]
+pub use web::{FillWeb, WebForm};
 
 /// What kind of field it is. Signatures and push buttons are not passed in.
 #[derive(Clone, Debug, PartialEq)]

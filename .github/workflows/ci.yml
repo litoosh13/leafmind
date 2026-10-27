@@ -25,6 +25,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo clippy -p leafmind-fields --features wasm --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy -p leafmind-qa --no-default-features --features wasm --target wasm32-unknown-unknown -- -D warnings
+      - run: cargo clippy -p leafmind-fill --no-default-features --features wasm --target wasm32-unknown-unknown -- -D warnings
 
   test:
     strategy:

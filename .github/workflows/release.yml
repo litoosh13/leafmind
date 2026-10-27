@@ -45,6 +45,13 @@ jobs:
           wasm-pack build crates/leafmind-qa --release --target web --out-dir "$PWD/dist/leafmind-qa-wasm" -- --no-default-features --features wasm
           cp crates/leafmind-qa/js/*.js LICENSE dist/leafmind-qa-wasm/
           cd dist && zip -r "leafmind-qa-wasm-$GITHUB_REF_NAME.zip" leafmind-qa-wasm
+      - name: Fill commands for the browser
+        env:
+          RUSTFLAGS: -C target-feature=+simd128
+        run: |
+          wasm-pack build crates/leafmind-fill --release --target web --out-dir "$PWD/dist/leafmind-fill-wasm" -- --no-default-features --features wasm
+          cp crates/leafmind-fill/js/*.js LICENSE dist/leafmind-fill-wasm/
+          cd dist && zip -r "leafmind-fill-wasm-$GITHUB_REF_NAME.zip" leafmind-fill-wasm
       - uses: actions/download-artifact@v4
         with:
           name: tesseract-macos
@@ -57,6 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes \
-            --notes "Use it from Cargo: \`leafmind-qa = { git = \"https://github.com/${{ github.repository }}\", tag = \"$GITHUB_REF_NAME\" }\` (same for leafmind-fields and leafmind-ocr). leafmind-fields-wasm: the field finder for the browser, built with SIMD, with its two models. leafmind-qa-wasm: question answering for the browser (WebGPU or CPU, with ONNX Runtime Web 1.30; models: scripts/fetch-qa-models.sh <dir> web). tesseract-macos: Tesseract 5.5.3 for leafmind-ocr in macOS apps (Apple silicon and Intel, macOS 11 or newer, needs nothing else)." \
+            --notes "Use it from Cargo: \`leafmind-qa = { git = \"https://github.com/${{ github.repository }}\", tag = \"$GITHUB_REF_NAME\" }\` (same for leafmind-fields, leafmind-ocr and leafmind-fill). leafmind-fields-wasm: the field finder for the browser, built with SIMD, with its two models. leafmind-qa-wasm: question answering for the browser (WebGPU or CPU, with ONNX Runtime Web 1.30; models: scripts/fetch-qa-models.sh <dir> web). leafmind-fill-wasm: fill commands for the browser (gte on WebGPU or CPU, Needle's browser engine; files: scripts/fetch-qa-models.sh <dir> web and <dir> fill). tesseract-macos: Tesseract 5.5.3 for leafmind-ocr in macOS apps (Apple silicon and Intel, macOS 11 or newer, needs nothing else)." \
             "dist/leafmind-fields-wasm-$GITHUB_REF_NAME.zip" "dist/leafmind-qa-wasm-$GITHUB_REF_NAME.zip" \
+            "dist/leafmind-fill-wasm-$GITHUB_REF_NAME.zip" \
             "dist/tesseract-macos-$GITHUB_REF_NAME.zip"

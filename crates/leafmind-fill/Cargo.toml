@@ -7,10 +7,25 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["native"]
+# The native engine (FillEngine): gte on ONNX Runtime and Needle's C engine, both shipped by the app; the
+# tokenizer's C regex library.
+native = ["dep:ort", "dep:libloading", "tokenizers/onig"]
+# The browser build (FillWeb): the page runs gte and Needle; the tokenizer's pure-Rust regex backend.
+# Build with --no-default-features --features wasm.
+wasm = ["tokenizers/unstable_wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys"]
+
 [dependencies]
 leafmind-fields = { path = "../leafmind-fields" }
-libloading.workspace = true
-ort.workspace = true
+libloading = { workspace = true, optional = true }
+ort = { workspace = true, optional = true }
 regex.workspace = true
 serde_json.workspace = true
-tokenizers = { workspace = true, features = ["onig"] }
+tokenizers.workspace = true
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }

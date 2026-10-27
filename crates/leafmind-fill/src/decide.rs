@@ -198,6 +198,15 @@ pub(crate) fn is_signing(command: &str) -> bool {
     SIGN.is_match(command)
 }
 
+/// Whether the word rules alone decide the command, so Needle is not asked (in the browser it takes about 1 s): a
+/// tick word, or one "label: value". Not when it may name several fields ("tick A and B", "a: 1, b: 2").
+pub(crate) fn rules_decide(command: &str) -> bool {
+    let colons = command.matches(':').count();
+    let tick = TICK.is_match(command);
+    (tick && colons == 0 && !command.contains(',') && !command.contains(" and "))
+        || (!tick && colons == 1)
+}
+
 /// "clear …", "empty …", "remove …".
 pub(crate) fn is_clearing(command: &str) -> bool {
     CLEAR.is_match(command)
@@ -536,6 +545,11 @@ mod tests {
         assert!(is_signing("sign the form") && is_signing("please add my signature"));
         assert!(!is_signing("signature date: 10/27/2026"));
         assert!(is_clearing("clear the phone field") && !is_clearing("my phone is 555"));
+        assert!(
+            rules_decide("tick the newsletter") && rules_decide("address: 12 Oak Street, Apt 4")
+        );
+        assert!(!rules_decide("tick A and B") && !rules_decide("name: Robin, phone: 555"));
+        assert!(!rules_decide("my phone is 555"));
         assert_eq!(
             same_as("mailing address same as home address"),
             Some(("mailing address", "home address"))

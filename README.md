@@ -49,7 +49,7 @@ libraries below and tells leafmind where they are.
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
 | `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
-| `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB) | Needle's engine: inside `python/cactus_needle-3.2.0-py3-none-<platform>.whl` (a zip) in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3), published for macOS (Apple silicon and Intel), Windows and Linux (x86-64 and ARM); `fill.cact`: [litoo13/leafmind-fill-needle](https://huggingface.co/litoo13/leafmind-fill-needle) |
+| `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB). In the browser: ONNX Runtime Web 1.30, the q4f16 `gte-embed/`, Needle's browser engine (`needle.js`, `needle.wasm`) and `fill.cact` | `fill.cact` and the browser engine: `scripts/fetch-qa-models.sh <dir> fill`; gte: as for `leafmind-qa`; Needle's native engine: inside `python/cactus_needle-3.2.0-py3-none-<platform>.whl` (a zip) in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3), published for macOS (Apple silicon and Intel), Windows and Linux (x86-64 and ARM); browser package: `leafmind-fill-wasm-<tag>.zip` from Releases |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
@@ -251,6 +251,32 @@ home address": write that field's current value). The last argument is today's d
 from the words around each field and from tooltips, so words from the PDF's text layer (or from OCR for a scan)
 matter. The proposals can be wrong: always show them before writing. Needle's engine holds one model for the whole
 process, so load one `FillEngine`.
+
+In the browser, unpack `leafmind-fill-wasm-<tag>.zip` and serve it with the files from
+`scripts/fetch-qa-models.sh <dir> web` and `<dir> fill`:
+
+```js
+import { loadFill } from "./leafmind-fill/leafmind-fill-web.js";
+const fill = await loadFill({
+  ortUrl: "/libs/onnxruntime-web/",     // ONNX Runtime Web 1.30 (ort.webgpu.min.mjs and its .wasm files)
+  embedderUrl: "/models/qa/gte-embed/", // model_q4f16.onnx + tokenizer.json
+  needleUrl: "/models/needle-web/",     // needle.js + needle.wasm
+  modelUrl: "/models/fill/fill.cact",
+});
+const form = await fill.prepare(
+  [{ id: 7, page: 1, bounds: [180, 98, 500, 112], kind: "text" }], // kind: "text" | "checkbox" | "choice" (+ options)
+  [{ page: 1, words: [{ text: "Phone", bounds: [50, 100, 80, 110] }, { text: "number:", bounds: [84, 100, 126, 110] }] }],
+);
+const p = await fill.propose(form, "my phone number is 0151 2345678", "10/27/2026");
+// {kind: "actions", actions: [{field: 7, change: {kind: "fill", value: "0151 2345678"}, alternatives: []}]}
+// change kinds: fill, check, choose, clear, copy_from; or {kind: "no_value" | "no_such_field" | "not_supported"}
+```
+
+Everything runs in a worker. The answers match the native ones closely (on the public test forms, 93 of 144 right
+against 95 natively), but Needle's browser engine runs on one CPU thread: about 1 s per sentence on an Apple M4
+Max (0.1 s natively). Ticks ("tick I agree") and "label: value" sentences skip Needle and take about 50 ms, so the
+average on the test forms was 0.8 s. If the page has a Content Security Policy, it must allow `blob:` scripts (Needle's
+engine is a classic script, which the worker loads as a module from a Blob).
 
 ### Licence for your project
 

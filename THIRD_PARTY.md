@@ -173,6 +173,11 @@ bundle the libraries. Tested in CI on Ubuntu (`libtesseract5`).
   `libneedle.dylib` (1,070,448 bytes) — `6794ef011da58f6138a2c1e7103dcb73b401ddfb9aa67cc28b31fadded7ff780`. It
   links only the system libraries and has no network code (Cactus's Python package, not used by leafmind, sends
   usage counts unless `NEEDLE_TELEMETRY=0`).
+- **Browser engine:** the same repository at revision `d6c7d6a2e9655505e0f8e23339356dd1705900eb`, `wasm/needle.js`
+  (62,082 bytes) — `a675c66f506a1b6f922d852c0cc0b82a843ce9d0fab6a80a408106f516df126f` and `wasm/needle.wasm`
+  (930,545 bytes) — `7b73d09c17923bf81d6bdb82e19b3c343b8994f83d512ddec52eec9f6b029802` (Emscripten build; it fetches
+  nothing but its own `.wasm`, which leafmind's worker hands in). `scripts/fetch-qa-models.sh <dir> fill` downloads
+  them with `fill.cact`.
 - **Fine-tune:** https://huggingface.co/litoo13/leafmind-fill-needle, revision
   `c52f3d0a11f38e6a01d094090501a35c90f2882b`: leafmind's LoRA fine-tune (rank 32, 2 epochs) on 6,000 invented
   form-fill examples (made-up forms, labels and values; no real documents or personal data).

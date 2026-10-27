@@ -1073,12 +1073,15 @@ dependencies = [
 name = "leafmind-fill"
 version = "0.8.1"
 dependencies = [
+ "js-sys",
  "leafmind-fields",
  "libloading",
  "ort",
  "regex",
  "serde_json",
  "tokenizers",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
