@@ -4,7 +4,7 @@ members = ["crates/leafmind-fields", "crates/leafmind-fill", "crates/leafmind-oc
 exclude = ["third_party/pdf-inspector"]
 
 [workspace.package]
-version = "0.8.1"
+version = "0.9.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/litoosh13/leafmind"
