@@ -82,7 +82,7 @@ impl Document {
         let mut pages: Vec<(u32, usize, usize)> = vec![];
         for c in &chunks {
             let sentences = text::sentences_of(&c.text);
-            let rows = sentences.iter().filter(|s| is_row(s)).count();
+            let rows = sentences.iter().filter(|s| text::is_row(s)).count();
             match pages.iter_mut().find(|p| p.0 == c.page) {
                 Some(p) => {
                     p.1 += sentences.len();
@@ -229,14 +229,6 @@ const ASKING: &[&str] = &[
     "على",
 ];
 
-/// A short form row: "label: value" with a value of at most 60 characters.
-fn is_row(sentence: &str) -> bool {
-    text::is_label_value(sentence)
-        && sentence
-            .split_once([':', '：'])
-            .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
-}
-
 /// The words of `text` with at least 3 characters and a letter, in lower case.
 fn words(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric())
@@ -279,7 +271,8 @@ fn form_row(
             .filter(|w| !ASKING.contains(&w.as_str()))
             .collect();
         let on_form_page = form_pages.contains(&s.page);
-        let usable = on_form_page && text::is_label_value(&s.text) || short && is_row(&s.text);
+        let usable =
+            on_form_page && text::is_label_value(&s.text) || short && text::is_row(&s.text);
         if !usable || label.is_empty() {
             continue;
         }

@@ -311,3 +311,22 @@ fn a_few_rows_in_ordinary_text_are_found_by_their_label() {
     found(&doc, "who is the technician?", "Sam Rivers");
     not_found(&doc, "what is the insurance premium?");
 }
+
+/// The first row after an intro ending in ":" is a row of its own, like the rows after it.
+#[test]
+#[ignore = "needs the ONNX models and ONNX Runtime (LEAFMIND_QA_MODELS, LEAFMIND_ORT)"]
+fn the_first_row_after_an_intro_line_is_its_own_answer() {
+    let page = "Greenhouse Plot Notice\n\n\
+        Thank you for joining the allotment society this season. The committee has reviewed your application \
+        and assigned you a place in the shared greenhouse. Please read this notice before you start planting.\n\n\
+        Please find the details of your assigned plot below:\n\
+        Reference ID: GP2093\nSection: North Bench\nCoordinator: Lee Hart\n\n\
+        Watering is done by the members in turn, and the rota hangs next to the door. Tools must be cleaned \
+        before they are put away. Chemical sprays are not allowed anywhere in the greenhouse.";
+    let doc = engine().index_pages(&[(1, page)]).unwrap();
+    match engine().ask(&doc, "what is reference ID?").unwrap() {
+        Answer::Found { sentences, .. } => assert_eq!(sentences[0].text, "Reference ID: GP2093"),
+        other => panic!("{other:?}"),
+    }
+    not_found(&doc, "what is the rent?");
+}

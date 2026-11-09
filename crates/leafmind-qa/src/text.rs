@@ -122,6 +122,14 @@ pub(crate) fn is_label_value(line: &str) -> bool {
     })
 }
 
+/// A short form row: "label: value" with a value of at most 60 characters.
+pub(crate) fn is_row(sentence: &str) -> bool {
+    is_label_value(sentence)
+        && sentence
+            .split_once([':', '：'])
+            .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
+}
+
 /// Whether `value` (a line or paragraph) is the value of the bare label before it, not a label, heading text
 /// or list item of its own.
 fn joins_label(label: &str, value: &str) -> bool {
@@ -547,7 +555,11 @@ pub fn sentences_of(text: &str) -> Vec<String> {
         }
         // A bare line before this one never stands alone: it is a label taking this line as its value
         // ("1.2 Date of birth: 12.03.1985"), or a heading that starts this line's first sentence.
+        // A form row after a line ending in ":" stands alone, so its own label stays its label.
+        let row_after_intro =
+            is_row(line) && out.last().is_some_and(|prev| prev.ends_with([':', '：']));
         let join = match out.last() {
+            _ if row_after_intro => None,
             Some(prev) if joins_label(prev, line) => Some(": "),
             Some(prev) if is_bare_label(prev) && !starts_with_bullet(line) => Some(" "),
             // A long line without a sentence end is prose wrapped onto the next line.
@@ -574,7 +586,9 @@ pub fn sentences_of(text: &str) -> Vec<String> {
                 }
                 // A lead-in ("as follows:") or a question used as a heading ("What is a plot?") belongs to the
                 // sentence after it, which holds the answer.
-                Some(lead_in) if lead_in.ends_with([':', '：', '?', '؟']) => {
+                Some(lead_in)
+                    if lead_in.ends_with([':', '：', '?', '؟']) && !(k == 0 && row_after_intro) =>
+                {
                     lead_in.push(' ');
                     lead_in.push_str(&sentence);
                 }
@@ -1008,6 +1022,32 @@ mod tests {
         assert_eq!(
             sentences_of("Bring along: • gloves • a spade"),
             ["Bring along: gloves", "a spade"]
+        );
+    }
+
+    #[test]
+    fn a_form_row_after_an_intro_stands_alone() {
+        assert_eq!(
+            sentences_of("Your details are listed below:\nBadge ID: T1\nTeam: Blue"),
+            [
+                "Your details are listed below:",
+                "Badge ID: T1",
+                "Team: Blue"
+            ]
+        );
+        assert_eq!(
+            sentences_of("Details:\nBadge ID: T1"),
+            ["Details:", "Badge ID: T1"]
+        );
+        // Ordinary text and long values stay with the lead-in.
+        assert_eq!(
+            sentences_of("The rule is as follows:\nThe door stays closed."),
+            ["The rule is as follows: The door stays closed."]
+        );
+        let long = format!("Note: {}", "word ".repeat(20).trim_end());
+        assert_eq!(
+            sentences_of(&format!("Read this:\n{long}")),
+            [format!("Read this: {long}")]
         );
     }
 

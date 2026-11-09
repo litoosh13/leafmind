@@ -34,10 +34,10 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.2" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.2" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.2" }
-leafmind-fill = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.2" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
+leafmind-fill = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
