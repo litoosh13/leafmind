@@ -228,7 +228,7 @@ impl QaEngine {
         let scores = self.reranker.rerank(question, &sentences)?;
         Ok(flow::decide(
             &self.options,
-            doc.form,
+            &doc.form_pages,
             question,
             &scores,
             &sentences,

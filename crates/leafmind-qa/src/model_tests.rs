@@ -242,3 +242,51 @@ fn a_form_with_capital_labels_answers_with_its_rows() {
     found(&doc, "How much is the yearly fee?", "45 Euro");
     not_found(&doc, "What is the member's email address?");
 }
+
+#[test]
+#[ignore = "needs the ONNX models and ONNX Runtime (LEAFMIND_QA_MODELS, LEAFMIND_ORT)"]
+fn a_form_page_keeps_its_rows_next_to_a_page_of_prose() {
+    // R-006: the form's rows on page 1, a page of rules on page 2 (fewer than 40 % rows in the whole document).
+    let form = "GARDEN CLUB REGISTRATION\nMEMBER NAME: Robin Example\nCLUB NAME: Mossbury Allotment Society\n\
+                CLUB ADDRESS: 3 Orchard Road, Mossbury\nPLOT SIZE: Half plot\nSTART OF SEASON: 1 March 2027\n\
+                YEARLY FEE: 45 Euro\nWATER ACCESS: Shared tap";
+    let rules = [
+        "Members keep their plot tidy and free of weeds throughout the season.",
+        "Paths between plots stay clear so that wheelbarrows can pass.",
+        "Bonfires are not allowed on any part of the site.",
+        "Hosepipes may only be used in the early morning and in the evening.",
+        "Sheds must not be taller than two metres.",
+        "Members store their tools in their own shed or take them home.",
+        "Dogs are welcome on a lead and must not enter other plots.",
+        "Children visit the site only with an adult member.",
+        "Compost heaps are kept at the back of each plot.",
+        "Chemical weed killers are not used anywhere on the site.",
+        "The main gate is locked every evening at dusk.",
+        "Members tell the committee before they plant fruit trees.",
+        "Rainwater butts are encouraged on every shed.",
+        "Rubbish that cannot be composted is taken home.",
+        "Noise is kept low on Sunday mornings.",
+        "Visitors sign the book in the clubhouse.",
+        "Members help with the shared hedges twice a year.",
+        "A plot left untended for three months may be offered to the next person on the waiting list.",
+        "Greenhouses need the committee's written agreement.",
+        "Bees may be kept only after the beekeeping course.",
+        "The clubhouse kettle is for everyone and is cleaned after use.",
+        "Seeds swapped at the spring market are labelled with their variety.",
+        "Car parking is limited to the gravel area by the gate.",
+        "Ponds are fenced or covered if children visit the plot.",
+        "Members report broken taps to the water officer.",
+        "The annual meeting takes place in the clubhouse in November.",
+        "Prizes for the best plot are given at the summer show.",
+        "Wood chips from the tree surgeons are free for all members.",
+        "Plots are inspected by the committee in June and September.",
+        "Questions about these rules go to the club secretary.",
+    ]
+    .join(" ");
+    let doc = engine().index_pages(&[(1, form), (2, &rules)]).unwrap();
+    found(&doc, "Club address?", "3 Orchard Road");
+    found(&doc, "Club name?", "Mossbury Allotment Society");
+    found(&doc, "Yearly fee?", "45 Euro");
+    found(&doc, "Start of season?", "1 March 2027");
+    not_found(&doc, "What is the member's email address?");
+}

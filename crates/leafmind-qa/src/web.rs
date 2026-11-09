@@ -164,7 +164,7 @@ impl Inner {
         let scores = self.rerank(question, &sentences).await?;
         Ok(flow::decide(
             &self.options,
-            doc.form,
+            &doc.form_pages,
             question,
             &scores,
             &sentences,

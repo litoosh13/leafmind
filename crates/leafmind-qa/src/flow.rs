@@ -12,8 +12,16 @@ pub(crate) const TOP_CHUNKS: usize = 8;
 
 /// A document is a form when at least this share of its sentences are short form rows ("label: value", value
 /// ≤ 60 characters). On a broad public benchmark (14 sets) no document reached 0.4 (long reports up to 0.3, where
-/// the forms rule made wrong answers); invented forms are around 0.75.
+/// the forms rule made wrong answers); invented forms are around 0.75. In a short document a single page can
+/// qualify too ([`FORM_PAGE_MAX_DOC`]), so a form with a page of terms keeps its rows.
 const FORM_SHARE: f64 = 0.4;
+
+/// A single page counts as a form page only in a document of at most this many pages, and with at least
+/// [`FORM_PAGE_MIN_ROWS`] rows. In long reports tables, contents and index pages look like forms: without this limit
+/// 74 junk answers appeared on the long-document benchmark (wrong answers 14 → 30), with it none, and every invented
+/// form stays a form.
+const FORM_PAGE_MAX_DOC: usize = 10;
+const FORM_PAGE_MIN_ROWS: usize = 3;
 
 /// In a form, a row whose label the question names completely (every word but fillers) is answered from this
 /// reranker score on, below `min_confidence`: the reranker scores form rows low (0.4–0.5), all-caps labels lower.
@@ -55,8 +63,9 @@ pub struct Document {
     bm25: Bm25,
     pub(crate) vectors: Vec<Vec<f32>>,
     pub(crate) language: Option<Language>,
-    /// Whether the document is a form ([`FORM_SHARE`]): only then the forms rule of [`decide`] applies.
-    pub(crate) form: bool,
+    /// The pages whose rows the forms rule of [`decide`] applies to: all pages of a form, or form pages of a short
+    /// document ([`FORM_SHARE`], [`FORM_PAGE_MAX_DOC`]).
+    pub(crate) form_pages: Vec<u32>,
 }
 
 impl Document {
@@ -67,17 +76,36 @@ impl Document {
         language: Option<Language>,
     ) -> Self {
         let texts: Vec<&str> = chunks.iter().map(|c| c.text.as_str()).collect();
-        let sentences: Vec<String> = texts.iter().flat_map(|t| text::sentences_of(t)).collect();
-        let rows = sentences
-            .iter()
-            .filter(|s| {
-                text::is_label_value(s)
-                    && s.split_once([':', '：'])
-                        .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
-            })
-            .count();
+        // Per page: (page, sentences, form rows).
+        let mut pages: Vec<(u32, usize, usize)> = vec![];
+        for c in &chunks {
+            let sentences = text::sentences_of(&c.text);
+            let rows = sentences
+                .iter()
+                .filter(|s| {
+                    text::is_label_value(s)
+                        && s.split_once([':', '：'])
+                            .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
+                })
+                .count();
+            match pages.iter_mut().find(|p| p.0 == c.page) {
+                Some(p) => {
+                    p.1 += sentences.len();
+                    p.2 += rows;
+                }
+                None => pages.push((c.page, sentences.len(), rows)),
+            }
+        }
+        let (sentences, rows) = pages.iter().fold((0, 0), |a, p| (a.0 + p.1, a.1 + p.2));
+        let share = |rows: usize, n: usize| rows as f64 >= FORM_SHARE * n.max(1) as f64;
+        let whole = rows > 0 && share(rows, sentences);
+        let short = pages.len() <= FORM_PAGE_MAX_DOC;
         Document {
-            form: rows as f64 >= FORM_SHARE * sentences.len().max(1) as f64,
+            form_pages: pages
+                .into_iter()
+                .filter(|&(_, n, r)| whole || (short && r >= FORM_PAGE_MIN_ROWS && share(r, n)))
+                .map(|(page, ..)| page)
+                .collect(),
             bm25: Bm25::new(&texts),
             vectors,
             chunks,
@@ -154,11 +182,11 @@ pub(crate) fn candidates(doc: &Document, question: &str, question_vector: &[f32]
 }
 
 /// The answer from the reranker's `scores` of the `sentences`: the best one and its amendments, unless it scores
-/// below `min_confidence` or another sentence scores almost as high (`min_gap`). In the second case, in a form
-/// (`form`, see [`Document`]), a form row whose label the question names is still the answer ([`form_row`]).
+/// below `min_confidence` or another sentence scores almost as high (`min_gap`). In the second case a form row on
+/// a form page (`form_pages`, see [`Document`]) whose label the question names is still the answer ([`form_row`]).
 pub(crate) fn decide(
     options: &QaOptions,
-    form: bool,
+    form_pages: &[u32],
     question: &str,
     scores: &[f64],
     sentences: &[Passage],
@@ -167,8 +195,13 @@ pub(crate) fn decide(
     let confidence = picked.first().map_or(0.0, |&i| scores[i]);
     let clear = search::gap(scores, &picked, sentences) >= options.min_gap;
     if !(confidence >= options.min_confidence && clear)
-        && form
-        && let Some(i) = form_row(question, scores, sentences, options.min_confidence)
+        && let Some(i) = form_row(
+            question,
+            scores,
+            sentences,
+            form_pages,
+            options.min_confidence,
+        )
     {
         return Answer::Found {
             sentences: vec![sentences[i].clone()],
@@ -220,6 +253,7 @@ fn form_row(
     question: &str,
     scores: &[f64],
     sentences: &[Passage],
+    form_pages: &[u32],
     min_confidence: f64,
 ) -> Option<usize> {
     let asked: Vec<String> = words(question)
@@ -235,7 +269,7 @@ fn form_row(
             .into_iter()
             .filter(|w| !ASKING.contains(&w.as_str()))
             .collect();
-        if !text::is_label_value(&s.text) || label.is_empty() {
+        if !form_pages.contains(&s.page) || !text::is_label_value(&s.text) || label.is_empty() {
             continue;
         }
         let named = label
@@ -283,22 +317,22 @@ mod tests {
         let scores = [0.57, 0.58, 0.55];
         // Close scores: the gap rule alone withholds; the label "Plot size" is named by the question.
         assert!(matches!(
-            decide(&options, true, "Who signs?", &scores, &s),
+            decide(&options, &[1], "Who signs?", &scores, &s),
             Answer::NotFound { .. }
         ));
-        match decide(&options, true, "How big is the plot size?", &scores, &s) {
+        match decide(&options, &[1], "How big is the plot size?", &scores, &s) {
             Answer::Found { sentences, .. } => assert_eq!(sentences[0].text, "2.2 Plot size: 250"),
             other => panic!("{other:?}"),
         }
         // A completely named label from 0.4 on, below min_confidence.
         assert!(matches!(
-            decide(&options, true, "What is the plot size?", &[0.3, 0.42, 0.35], &s),
+            decide(&options, &[1], "What is the plot size?", &[0.3, 0.42, 0.35], &s),
             Answer::Found { confidence, .. } if confidence == 0.42
         ));
         assert!(matches!(
             decide(
                 &options,
-                true,
+                &[1],
                 "What is the plot size?",
                 &[0.3, 0.38, 0.35],
                 &s
@@ -317,16 +351,21 @@ mod tests {
         assert_eq!(scoring_text("THE RENT IS DUE."), "THE RENT IS DUE.");
         // Not in a document that is no form.
         assert!(matches!(
-            decide(&options, false, "How big is the plot size?", &scores, &s),
+            decide(&options, &[], "How big is the plot size?", &scores, &s),
+            Answer::NotFound { .. }
+        ));
+        // Nor when only another page is a form page.
+        assert!(matches!(
+            decide(&options, &[2], "How big is the plot size?", &scores, &s),
             Answer::NotFound { .. }
         ));
         // Of two named rows the better-scoring one; a half-named label never below min_confidence.
         assert!(matches!(
-            decide(&options, true, "Requested plot size?", &[0.57, 0.45, 0.55], &s),
+            decide(&options, &[1], "Requested plot size?", &[0.57, 0.45, 0.55], &s),
             Answer::Found { confidence, .. } if confidence == 0.57
         ));
         assert!(matches!(
-            decide(&options, true, "Requested plot?", &[0.45, 0.3, 0.42], &s),
+            decide(&options, &[1], "Requested plot?", &[0.45, 0.3, 0.42], &s),
             Answer::NotFound { .. }
         ));
     }
@@ -337,25 +376,59 @@ mod form_tests {
     use super::*;
 
     #[test]
-    fn a_document_is_a_form_by_its_share_of_form_rows() {
-        let chunk = |text: &str| Passage {
-            page: 1,
+    fn a_page_is_a_form_by_its_share_of_form_rows() {
+        let chunk = |page, text: &str| Passage {
+            page,
             text: text.into(),
             section: None,
         };
-        let doc = |texts: &[&str]| {
-            let chunks: Vec<Passage> = texts.iter().map(|t| chunk(t)).collect();
+        let form_pages = |chunks: Vec<Passage>| {
             let n = chunks.len();
-            Document::new(chunks, vec![vec![1.0]; n], None).form
+            Document::new(chunks, vec![vec![1.0]; n], None).form_pages
         };
-        assert!(doc(&[
-            "Name: Maria Example\nPlot: B-14\nSize: 250",
-            "Signature"
-        ]));
-        assert!(!doc(&[
-            "The lease runs for two years. Rent is due monthly. Parking is extra.",
-            "Note: the garden closes at dusk."
-        ]));
+        assert_eq!(
+            form_pages(vec![
+                chunk(1, "Name: Maria Example\nPlot: B-14\nSize: 250"),
+                chunk(1, "Signature")
+            ]),
+            vec![1]
+        );
+        assert!(
+            form_pages(vec![
+                chunk(
+                    1,
+                    "The lease runs for two years. Rent is due monthly. Parking is extra."
+                ),
+                chunk(1, "Note: the garden closes at dusk.")
+            ])
+            .is_empty()
+        );
+        // Table-like pages of a long report are no form pages.
+        let mut long: Vec<Passage> = (1..=11)
+            .map(|p| chunk(p, &"The plot must be kept tidy. ".repeat(30)))
+            .collect();
+        long[4] = chunk(5, "Sales: 12\nCosts: 7\nProfit: 5");
+        assert!(form_pages(long).is_empty());
+        // Nor does a page with one or two rows count next to prose.
+        assert!(
+            form_pages(vec![
+                chunk(1, "Note: none"),
+                chunk(2, &"The plot must be kept tidy. ".repeat(30))
+            ])
+            .is_empty()
+        );
+        // A form page stays one when another page is long prose (R-006).
+        let prose = "The plot must be kept tidy. ".repeat(30);
+        assert_eq!(
+            form_pages(vec![
+                chunk(
+                    1,
+                    "Member name: Robin Example\nClub address: 3 Orchard Road\nYearly fee: 45 Euro"
+                ),
+                chunk(2, &prose),
+            ]),
+            vec![1]
+        );
     }
 }
 
