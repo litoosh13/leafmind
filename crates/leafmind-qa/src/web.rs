@@ -165,6 +165,7 @@ impl Inner {
         Ok(flow::decide(
             &self.options,
             &doc.form_pages,
+            doc.short,
             question,
             &scores,
             &sentences,

@@ -290,3 +290,24 @@ fn a_form_page_keeps_its_rows_next_to_a_page_of_prose() {
     found(&doc, "Start of season?", "1 March 2027");
     not_found(&doc, "What is the member's email address?");
 }
+
+/// A few "label: value" rows inside ordinary text: too few for a form page, still answered when named.
+#[test]
+#[ignore = "needs the ONNX models and ONNX Runtime (LEAFMIND_QA_MODELS, LEAFMIND_ORT)"]
+fn a_few_rows_in_ordinary_text_are_found_by_their_label() {
+    let page = "Equipment Loan Notice\n\n\
+        Thank you for your request to borrow equipment from the workshop. We are pleased to confirm that it has \
+        been approved for the coming term. Please read this notice carefully before you collect anything.\n\n\
+        The workshop lends tools to members who have finished the basic safety course. Every item is checked \
+        by a technician before it leaves the building. Damage found on return is recorded in the loan book.\n\n\
+        Reference ID: LN4471\nDepartment: Woodworking\nTechnician: Sam Rivers\nReturn Date: 30 April\n\n\
+        Members should bring their workshop card when they come to collect the equipment. The store is open on \
+        weekdays between nine and four. Large items need a trolley, which can be reserved at the front desk.\n\n\
+        If the equipment stops working, stop using it at once and tell a member of staff. Do not try to repair \
+        anything yourself. A replacement will be offered whenever one is available.";
+    let doc = engine().index_pages(&[(1, page)]).unwrap();
+    found(&doc, "what is reference ID?", "LN4471");
+    found(&doc, "what is the department?", "Woodworking");
+    found(&doc, "who is the technician?", "Sam Rivers");
+    not_found(&doc, "what is the insurance premium?");
+}

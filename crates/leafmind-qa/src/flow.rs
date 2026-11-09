@@ -66,6 +66,8 @@ pub struct Document {
     /// The pages whose rows the forms rule of [`decide`] applies to: all pages of a form, or form pages of a short
     /// document ([`FORM_SHARE`], [`FORM_PAGE_MAX_DOC`]).
     pub(crate) form_pages: Vec<u32>,
+    /// At most [`FORM_PAGE_MAX_DOC`] pages: a row whose label the question names completely is answered on any page.
+    pub(crate) short: bool,
 }
 
 impl Document {
@@ -80,14 +82,7 @@ impl Document {
         let mut pages: Vec<(u32, usize, usize)> = vec![];
         for c in &chunks {
             let sentences = text::sentences_of(&c.text);
-            let rows = sentences
-                .iter()
-                .filter(|s| {
-                    text::is_label_value(s)
-                        && s.split_once([':', '：'])
-                            .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
-                })
-                .count();
+            let rows = sentences.iter().filter(|s| is_row(s)).count();
             match pages.iter_mut().find(|p| p.0 == c.page) {
                 Some(p) => {
                     p.1 += sentences.len();
@@ -106,6 +101,7 @@ impl Document {
                 .filter(|&(_, n, r)| whole || (short && r >= FORM_PAGE_MIN_ROWS && share(r, n)))
                 .map(|(page, ..)| page)
                 .collect(),
+            short,
             bm25: Bm25::new(&texts),
             vectors,
             chunks,
@@ -183,10 +179,12 @@ pub(crate) fn candidates(doc: &Document, question: &str, question_vector: &[f32]
 
 /// The answer from the reranker's `scores` of the `sentences`: the best one and its amendments, unless it scores
 /// below `min_confidence` or another sentence scores almost as high (`min_gap`). In the second case a form row on
-/// a form page (`form_pages`, see [`Document`]) whose label the question names is still the answer ([`form_row`]).
+/// a form page (`form_pages`, see [`Document`]) whose label the question names is still the answer, as is a row
+/// on any page of a `short` document when the question names its whole label ([`form_row`]).
 pub(crate) fn decide(
     options: &QaOptions,
     form_pages: &[u32],
+    short: bool,
     question: &str,
     scores: &[f64],
     sentences: &[Passage],
@@ -200,6 +198,7 @@ pub(crate) fn decide(
             scores,
             sentences,
             form_pages,
+            short,
             options.min_confidence,
         )
     {
@@ -230,6 +229,14 @@ const ASKING: &[&str] = &[
     "على",
 ];
 
+/// A short form row: "label: value" with a value of at most 60 characters.
+fn is_row(sentence: &str) -> bool {
+    text::is_label_value(sentence)
+        && sentence
+            .split_once([':', '：'])
+            .is_some_and(|(_, v)| v.trim().chars().count() <= 60)
+}
+
 /// The words of `text` with at least 3 characters and a letter, in lower case.
 fn words(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric())
@@ -248,12 +255,14 @@ fn same_word(a: &str, b: &str) -> bool {
 /// The best-scoring form row ("label: value") whose label the question names: at least half of the label's
 /// words (fillers like "of", "der" aside) are in the question, and its score reaches `min_confidence`, or
 /// [`NAMED_FLOOR`] when the question names all of them. Form rows score close to each other with the reranker,
-/// so the gap rule withholds them; the label says which row is asked for.
+/// so the gap rule withholds them; the label says which row is asked for. Off a form page only a short row in a
+/// `short` document counts, and only when the question names its whole label: a few rows inside ordinary text.
 fn form_row(
     question: &str,
     scores: &[f64],
     sentences: &[Passage],
     form_pages: &[u32],
+    short: bool,
     min_confidence: f64,
 ) -> Option<usize> {
     let asked: Vec<String> = words(question)
@@ -269,13 +278,18 @@ fn form_row(
             .into_iter()
             .filter(|w| !ASKING.contains(&w.as_str()))
             .collect();
-        if !form_pages.contains(&s.page) || !text::is_label_value(&s.text) || label.is_empty() {
+        let on_form_page = form_pages.contains(&s.page);
+        let usable = on_form_page && text::is_label_value(&s.text) || short && is_row(&s.text);
+        if !usable || label.is_empty() {
             continue;
         }
         let named = label
             .iter()
             .filter(|l| asked.iter().any(|q| same_word(l, q)))
             .count();
+        if !on_form_page && named < label.len() {
+            continue;
+        }
         let floor = if named == label.len() {
             min_confidence.min(NAMED_FLOOR)
         } else {
@@ -317,22 +331,30 @@ mod tests {
         let scores = [0.57, 0.58, 0.55];
         // Close scores: the gap rule alone withholds; the label "Plot size" is named by the question.
         assert!(matches!(
-            decide(&options, &[1], "Who signs?", &scores, &s),
+            decide(&options, &[1], false, "Who signs?", &scores, &s),
             Answer::NotFound { .. }
         ));
-        match decide(&options, &[1], "How big is the plot size?", &scores, &s) {
+        match decide(
+            &options,
+            &[1],
+            false,
+            "How big is the plot size?",
+            &scores,
+            &s,
+        ) {
             Answer::Found { sentences, .. } => assert_eq!(sentences[0].text, "2.2 Plot size: 250"),
             other => panic!("{other:?}"),
         }
         // A completely named label from 0.4 on, below min_confidence.
         assert!(matches!(
-            decide(&options, &[1], "What is the plot size?", &[0.3, 0.42, 0.35], &s),
+            decide(&options, &[1], false, "What is the plot size?", &[0.3, 0.42, 0.35], &s),
             Answer::Found { confidence, .. } if confidence == 0.42
         ));
         assert!(matches!(
             decide(
                 &options,
                 &[1],
+                false,
                 "What is the plot size?",
                 &[0.3, 0.38, 0.35],
                 &s
@@ -351,21 +373,74 @@ mod tests {
         assert_eq!(scoring_text("THE RENT IS DUE."), "THE RENT IS DUE.");
         // Not in a document that is no form.
         assert!(matches!(
-            decide(&options, &[], "How big is the plot size?", &scores, &s),
+            decide(
+                &options,
+                &[],
+                false,
+                "How big is the plot size?",
+                &scores,
+                &s
+            ),
             Answer::NotFound { .. }
         ));
         // Nor when only another page is a form page.
         assert!(matches!(
-            decide(&options, &[2], "How big is the plot size?", &scores, &s),
+            decide(
+                &options,
+                &[2],
+                false,
+                "How big is the plot size?",
+                &scores,
+                &s
+            ),
+            Answer::NotFound { .. }
+        ));
+        // In a short document a row off the form pages needs its whole label named.
+        assert!(matches!(
+            decide(&options, &[], true, "What is the plot size?", &[0.3, 0.42, 0.35], &s),
+            Answer::Found { confidence, .. } if confidence == 0.42
+        ));
+        assert!(matches!(
+            decide(
+                &options,
+                &[],
+                true,
+                "Requested plot?",
+                &[0.57, 0.45, 0.55],
+                &s
+            ),
+            Answer::NotFound { .. }
+        ));
+        // A long value is text, not a row.
+        let text = rows(&[
+            "Plot size: this one depends on the planning office and on the season in which the request is made",
+            "Notes: none",
+        ]);
+        assert!(matches!(
+            decide(
+                &options,
+                &[],
+                true,
+                "What is the plot size?",
+                &[0.42, 0.3],
+                &text
+            ),
             Answer::NotFound { .. }
         ));
         // Of two named rows the better-scoring one; a half-named label never below min_confidence.
         assert!(matches!(
-            decide(&options, &[1], "Requested plot size?", &[0.57, 0.45, 0.55], &s),
+            decide(&options, &[1], false, "Requested plot size?", &[0.57, 0.45, 0.55], &s),
             Answer::Found { confidence, .. } if confidence == 0.57
         ));
         assert!(matches!(
-            decide(&options, &[1], "Requested plot?", &[0.45, 0.3, 0.42], &s),
+            decide(
+                &options,
+                &[1],
+                false,
+                "Requested plot?",
+                &[0.45, 0.3, 0.42],
+                &s
+            ),
             Answer::NotFound { .. }
         ));
     }
