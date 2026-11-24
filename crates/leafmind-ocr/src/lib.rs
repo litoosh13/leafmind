@@ -27,8 +27,13 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+#[cfg(feature = "indra")]
+mod indra;
 mod layout;
 mod tesseract;
+
+#[cfg(feature = "indra")]
+pub use indra::{IndraEngine, IndraModels};
 
 /// What can go wrong.
 #[derive(Debug)]
@@ -37,6 +42,8 @@ pub enum Error {
     Tesseract(String),
     /// The pixels do not match width × height × 4.
     ImageSize,
+    /// An ONNX model (the Indra engine) could not be loaded or run (the message says why).
+    Model(String),
 }
 
 impl fmt::Display for Error {
@@ -44,6 +51,7 @@ impl fmt::Display for Error {
         match self {
             Error::Tesseract(why) => write!(f, "Tesseract: {why}"),
             Error::ImageSize => write!(f, "the image data does not match its width and height"),
+            Error::Model(why) => write!(f, "model: {why}"),
         }
     }
 }

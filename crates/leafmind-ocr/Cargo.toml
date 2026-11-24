@@ -7,8 +7,20 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+# Indra OCR on ONNX Runtime as an optional second engine (IndraEngine). Its model weights are not open source:
+# the app downloads them and accepts their licence (see src/indra/mod.rs).
+indra = ["dep:ort", "dep:serde_json", "dep:unicode-bidi", "dep:unicode-normalization", "dep:unicode-properties"]
+
 [dependencies]
 libloading.workspace = true
+ort = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+# Already in the dependency tree (pdf-inspector, tokenizers): bidi classes, NFC and general categories for
+# right-to-left lines.
+unicode-bidi = { version = "0.3", optional = true }
+unicode-normalization = { version = "0.1", optional = true }
+unicode-properties = { version = "0.1", default-features = false, features = ["general-category"], optional = true }
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

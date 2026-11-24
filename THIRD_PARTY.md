@@ -164,6 +164,29 @@ it reads exactly the same text as Homebrew's Tesseract 5.5.3, slightly faster (1
 can depend on that package and give leafmind its path (e.g. `/usr/lib/x86_64-linux-gnu/libtesseract.so.5`), or
 bundle the libraries. Tested in CI on Ubuntu (`libtesseract5`).
 
+## OCR: Indra (optional, feature `indra`; not in the repository, `scripts/fetch-qa-models.sh <dir> indra`)
+
+- **Code:** `crates/leafmind-ocr/src/indra/` is a Rust port of parts of indra-ocr 1.1.2
+  (https://github.com/datalab-to/indra, Apache License 2.0, by Datalab): page straightening and orientation, line
+  detection and its decoding, line crops, script routing, CTC reading, right-to-left order (`rtl.py`), line
+  splitting, list markers and XY-cut order. Changes: no language model, no layout / reading-order model, paragraphs
+  by line spacing, boxes mapped back to the image as given.
+- **Models:** https://huggingface.co/datalab-to/indra-ocr, revision `bd02167fdf2005a19962cc15188f8496a2c87d3b`.
+  **Licence: modified AI Pubs Open RAIL-M** (the repository's `LICENSE`, 14,750 bytes —
+  `50c88a018a7ee322e89f6b09401b237beb0cd331685879405b3db48993950a5f`): free for research, personal use and
+  organisations under Datalab's funding / revenue limit, not for use competing with Datalab's API; otherwise a
+  commercial licence from Datalab. Not open source; leafmind does not ship these files.
+  - `det.onnx` (389,948 bytes) — `f2bd4cba23e9c328cf7ec824634e423e191a2c6aacbbf35c62bd79dd70f62f59`
+  - `orient.onnx` (371,802 bytes) — `20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd`
+  - `script.onnx` (191,630 bytes) — `b6ce4e926e19c243faaf37bd46880398bf2cb4ae56a29e1177a3b017c1280e36`
+  - `rec.onnx` (5,042,161 bytes) — `475972a2710be4a3cbfeb2bc7f3624ffd563de07de42476fc7a290d4e1ece484`
+  - `rec_rtl.onnx` (4,812,710 bytes) — `468796bd684486a8388c30c8b4ed2a26e3eeb1f8ff02831c24c2e12c79a2a834`
+  - `rec_world.onnx` (5,627,990 bytes) — `c8d1e59f21b04966f179d2d2d8e22b230d22110b3f89855bbbf2624a58c40043`
+  - `rec_cjk.onnx` (10,176,018 bytes) — `4a035516a17e62cdf33a4fe2d88077654cb8841cff024685cdef4e351694ef50`
+  - `meta.json` (211,869 bytes) — `4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339`
+- **Test data:** `crates/leafmind-ocr/tests/data/bilingual-notice.png`, an invented English/Persian notice drawn by
+  `make_testdata.py` in the same folder (macOS's Arial Unicode font).
+
 ## Fill commands: Needle (not in the repository; the app ships it for `leafmind-fill`)
 
 - **Base:** https://huggingface.co/Cactus-Compute/needle3, revision `b274efcb` (121M parameters, Apache-2.0), by

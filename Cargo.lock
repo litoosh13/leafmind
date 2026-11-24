@@ -1090,6 +1090,11 @@ version = "0.9.3"
 dependencies = [
  "image",
  "libloading",
+ "ort",
+ "serde_json",
+ "unicode-bidi",
+ "unicode-normalization",
+ "unicode-properties",
 ]
 
 [[package]]

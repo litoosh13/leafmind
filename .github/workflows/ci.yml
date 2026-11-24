@@ -23,6 +23,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy -p leafmind-ocr --all-targets --features indra -- -D warnings
       - run: cargo clippy -p leafmind-fields --features wasm --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy -p leafmind-qa --no-default-features --features wasm --target wasm32-unknown-unknown -- -D warnings
       - run: cargo clippy -p leafmind-fill --no-default-features --features wasm --target wasm32-unknown-unknown -- -D warnings
@@ -38,6 +39,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
+      - run: cargo test -p leafmind-ocr --features indra
 
   # The Tesseract library for macOS apps (scripts/build-tesseract-macos.sh: universal, macOS 11+, nothing else
   # needed), checked with the OCR tests; release.yml attaches it to the release.

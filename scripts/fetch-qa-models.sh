@@ -7,10 +7,13 @@
 # With "needle-<platform>": Needle's native engine 3.2.0 for leafmind-fill, unpacked from Cactus's wheel into
 # <dir>/needle/ (libneedle3.dylib, .so or .dll, about 1.5 MB). Platforms: macos-arm64, macos-x86_64, linux-x86_64,
 # linux-arm64, linux-musl-x86_64, linux-musl-arm64, windows-x86_64, windows-arm64 (unpacking needs `unzip`).
+# With "indra": the models of leafmind-ocr's optional Indra engine into <dir>/indra/ (about 27 MB). THEIR WEIGHTS ARE
+# NOT OPEN SOURCE: a modified OpenRAIL-M licence (<dir>/indra/LICENSE; free for research, personal use and small
+# organisations, not for products competing with Datalab's). Download them only if you accept it.
 # Files already present with the right checksum are not downloaded again. Sources and licences: THIRD_PARTY.md.
-# Usage: scripts/fetch-qa-models.sh <dir> [web | fill | needle-<platform>]
+# Usage: scripts/fetch-qa-models.sh <dir> [web | fill | needle-<platform> | indra]
 set -eu
-dir=${1:?usage: $0 <dir> [web | fill | needle-<platform>]}
+dir=${1:?usage: $0 <dir> [web | fill | needle-<platform> | indra]}
 want=${2:-native}
 
 sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
@@ -57,6 +60,16 @@ needle-linux-musl-arm64 needle Cactus-Compute/needle3 d6c7d6a2e9655505e0f8e23339
 needle-linux-musl-x86_64 needle Cactus-Compute/needle3 d6c7d6a2e9655505e0f8e23339356dd1705900eb python/cactus_needle-3.2.0-py3-none-musllinux_1_2_x86_64.whl b91a479d0bb3a2d6a5b70e8b58db063ec5ae126c73a5e1a72dc9f9dd24e802fc
 needle-windows-x86_64 needle Cactus-Compute/needle3 d6c7d6a2e9655505e0f8e23339356dd1705900eb python/cactus_needle-3.2.0-py3-none-win_amd64.whl 0bd41dc812a4b7e504f6ba294de65a363a51b031f154d24aac748b07249dc952
 needle-windows-arm64 needle Cactus-Compute/needle3 d6c7d6a2e9655505e0f8e23339356dd1705900eb python/cactus_needle-3.2.0-py3-none-win_arm64.whl 15000affa669b7e84e6303617312e04650a05e9c71e856bab075a0ad36ebe8cf
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b det.onnx f2bd4cba23e9c328cf7ec824634e423e191a2c6aacbbf35c62bd79dd70f62f59
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b orient.onnx 20eaf670f55a7cf9facfe1bdd6c7b8e40be75bbf4d48a3df43f66aa3bbd874fd
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b script.onnx b6ce4e926e19c243faaf37bd46880398bf2cb4ae56a29e1177a3b017c1280e36
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b rec.onnx 475972a2710be4a3cbfeb2bc7f3624ffd563de07de42476fc7a290d4e1ece484
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b rec_rtl.onnx 468796bd684486a8388c30c8b4ed2a26e3eeb1f8ff02831c24c2e12c79a2a834
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b rec_world.onnx c8d1e59f21b04966f179d2d2d8e22b230d22110b3f89855bbbf2624a58c40043
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b rec_cjk.onnx 4a035516a17e62cdf33a4fe2d88077654cb8841cff024685cdef4e351694ef50
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b meta.json 4ce4c94b46f5d644033c02e718322014ff4081270f385038c571912b56696339
+indra indra datalab-to/indra-ocr bd02167fdf2005a19962cc15188f8496a2c87d3b LICENSE 50c88a018a7ee322e89f6b09401b237beb0cd331685879405b3db48993950a5f
 LIST
 [ "$found" = 1 ] || { echo "unknown choice: $want (see the comment at the top of $0)" >&2; exit 1; }
+[ "$want" = indra ] && echo "note: Indra's weights are under a modified OpenRAIL-M licence, see $dir/indra/LICENSE"
 echo "done: $dir"

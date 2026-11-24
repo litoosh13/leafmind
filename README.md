@@ -24,6 +24,10 @@ It is in early development.
 - **`leafmind-ocr`** — reads scanned pages with [Tesseract](https://github.com/tesseract-ocr/tesseract) 5 in
   the same four languages, detects the page's language, and returns paragraphs ready for `leafmind-qa`. On
   office-quality scans: 0.0 % wrong characters in English and German, about 4 % in Persian and Arabic.
+  Optionally (feature `indra`) with [Indra OCR](https://github.com/datalab-to/indra) instead: every script on a
+  page without choosing a language (English and Persian on one page), 0.1 % wrong characters in Persian and 1.4 % in
+  Arabic on the same scans, about 0.1 s per page instead of 0.9 s. **Its model weights are not open source** (see
+  below).
 
 ## Using leafmind in your project
 
@@ -50,7 +54,7 @@ libraries below and tells leafmind where they are.
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
 | `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
 | `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB). In the browser: ONNX Runtime Web 1.30, the q4f16 `gte-embed/`, Needle's browser engine (`needle.js`, `needle.wasm`) and `fill.cact` | `fill.cact` and the browser engine: `scripts/fetch-qa-models.sh <dir> fill`; gte: as for `leafmind-qa`; Needle's native engine: `scripts/fetch-qa-models.sh <dir> needle-<platform>` unpacks `libneedle3.dylib` / `.so` / `.dll` from Cactus's 3.2.0 wheel in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3) (macOS Apple silicon and Intel, Windows and Linux, x86-64 and ARM); browser package: `leafmind-fill-wasm-<tag>.zip` from Releases |
-| `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>` |
+| `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB). With the `indra` feature instead: ONNX Runtime 1.30+ and Indra's models (about 27 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>`. Indra: `scripts/fetch-qa-models.sh <dir> indra` — **a modified OpenRAIL-M licence** (free for research, personal use and smaller organisations; not for products that compete with Datalab's); your app and its users must accept it |
 
 Licences of every model and library: [THIRD_PARTY.md](THIRD_PARTY.md).
 
@@ -206,6 +210,23 @@ between pages. On Linux with the distribution's Tesseract (built with OpenMP), s
 `OMP_THREAD_LIMIT=1`, as Tesseract advises when it runs inside a larger program. To ask questions about a scanned document, give the page texts to `leafmind-qa`:
 `qa.index_pages(&[(1, page1_text), (2, page2_text)])`.
 
+With the `indra` feature, `IndraEngine` reads a page without a language (each line goes to the recognizer of its
+script), straightens and turns it upright, and returns the same `OcrPage`:
+
+```rust
+use leafmind_ocr::{IndraEngine, IndraModels};
+
+let ocr = IndraEngine::load(&IndraModels {
+    onnxruntime: "libs/libonnxruntime.dylib".into(),
+    models: "models/indra".into(),
+}, 0)?; // 0 = half the cores
+let text = ocr.read(page.as_raw(), w, h)?;
+```
+
+Indra's models are not open source; leafmind ships none of them, and Tesseract stays the default. Limits: very
+large sheets (drawings) are read at a reduced size, so their small print is lost; word boxes on right-to-left
+lines are spread evenly over the line.
+
 ### 6. Fill a form from a sentence
 
 ```rust
@@ -316,6 +337,14 @@ The OCR tests with the real Tesseract are skipped by default as well. They need 
 scripts/fetch-tessdata.sh models/tessdata
 LEAFMIND_TESSERACT=/opt/homebrew/lib/libtesseract.5.dylib LEAFMIND_TESSDATA=$PWD/models/tessdata \
     cargo test -p leafmind-ocr -- --ignored
+```
+
+The Indra tests need ONNX Runtime and Indra's models:
+
+```bash
+scripts/fetch-qa-models.sh models indra
+LEAFMIND_ORT=/path/to/libonnxruntime.dylib LEAFMIND_INDRA=$PWD/models/indra \
+    cargo test -p leafmind-ocr --features indra -- --ignored
 ```
 
 For speed in the browser, build WebAssembly with SIMD: `RUSTFLAGS="-C target-feature=+simd128"`.
