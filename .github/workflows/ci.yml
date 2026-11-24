@@ -87,9 +87,13 @@ jobs:
       - run: scripts/fetch-qa-models.sh models/qa
       - run: scripts/fetch-tessdata.sh models/tessdata
       - name: ONNX Runtime 1.30
+        # The library from Microsoft's official PyPI wheel, checked by its SHA-256 (the GitHub release downloads
+        # of microsoft/onnxruntime answered 404 on 2026-11-24).
         run: |
-          curl -fsSL https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnxruntime-linux-x64-1.30.0.tgz | tar xz
-          echo "LEAFMIND_ORT=$PWD/onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so" >> "$GITHUB_ENV"
+          curl -fsSL -o ort.whl https://files.pythonhosted.org/packages/f1/a1/ede48ab5dc54907a2999362777f541e132639fb06628ded1932058aa8a36/onnxruntime-1.30.0-cp313-cp313-manylinux_2_28_x86_64.whl
+          echo "86f940afc801ea9681a4da8af84fbe95e1d9ea7d80903952cc1bfad54faad38f  ort.whl" | sha256sum -c
+          unzip -q -j ort.whl 'onnxruntime/capi/libonnxruntime.so*' -d ort
+          echo "LEAFMIND_ORT=$(ls $PWD/ort/libonnxruntime.so* | head -1)" >> "$GITHUB_ENV"
       - run: sudo apt-get update && sudo apt-get install -y libtesseract5
       - name: OCR tests
         env:

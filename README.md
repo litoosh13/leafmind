@@ -38,10 +38,10 @@ leafmind is not on crates.io; depend on a tag from [Releases](https://github.com
 
 ```toml
 [dependencies]
-leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
-leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
-leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
-leafmind-fill = { git = "https://github.com/litoosh13/leafmind", tag = "v0.9.3" }
+leafmind-fields = { git = "https://github.com/litoosh13/leafmind", tag = "v0.10.0" }
+leafmind-qa = { git = "https://github.com/litoosh13/leafmind", tag = "v0.10.0" }
+leafmind-ocr = { git = "https://github.com/litoosh13/leafmind", tag = "v0.10.0" }
+leafmind-fill = { git = "https://github.com/litoosh13/leafmind", tag = "v0.10.0" }
 ```
 
 Rust 1.98 or newer. leafmind downloads nothing and never goes online: your app ships the models and
@@ -52,7 +52,7 @@ libraries below and tells leafmind where they are.
 | Part | Your app ships | Where to get it |
 |---|---|---|
 | `leafmind-fields` | `form-field-v1-nano.onnx` (3.7 MB), optionally `form-field-v1-state.onnx` (0.4 MB) | `models/` in this repository |
-| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
+| `leafmind-qa` | ONNX Runtime 1.30 library; `gte-embed/` and `gte-reranker/` (about 345 MB). In the browser: ONNX Runtime Web 1.30 and the q4f16 models (about 355 MB) | ONNX Runtime: [its releases](https://github.com/microsoft/onnxruntime/releases/tag/v1.30.0), or the library inside its official wheel on [PyPI](https://pypi.org/project/onnxruntime/1.30.0/#files) (`onnxruntime/capi/`); models: `scripts/fetch-qa-models.sh <dir>` (browser: `scripts/fetch-qa-models.sh <dir> web`); browser package: `leafmind-qa-wasm-<tag>.zip` from Releases |
 | `leafmind-fill` | ONNX Runtime 1.30 and `gte-embed/` (the same as `leafmind-qa`); Needle's engine library (Cactus 3.2, about 1 MB); `fill.cact` (63 MB). In the browser: ONNX Runtime Web 1.30, the q4f16 `gte-embed/`, Needle's browser engine (`needle.js`, `needle.wasm`) and `fill.cact` | `fill.cact` and the browser engine: `scripts/fetch-qa-models.sh <dir> fill`; gte: as for `leafmind-qa`; Needle's native engine: `scripts/fetch-qa-models.sh <dir> needle-<platform>` unpacks `libneedle3.dylib` / `.so` / `.dll` from Cactus's 3.2.0 wheel in [Cactus-Compute/needle3](https://huggingface.co/Cactus-Compute/needle3) (macOS Apple silicon and Intel, Windows and Linux, x86-64 and ARM); browser package: `leafmind-fill-wasm-<tag>.zip` from Releases |
 | `leafmind-ocr` | Tesseract 5 library; language files (about 50 MB). With the `indra` feature instead: ONNX Runtime 1.30+ and Indra's models (about 27 MB) | macOS: `tesseract-macos-<tag>.zip` from Releases (one file, Apple silicon and Intel, macOS 11+); Windows: the DLLs listed in [THIRD_PARTY.md](THIRD_PARTY.md); Linux: the `libtesseract5` package. Language files: `scripts/fetch-tessdata.sh <dir>`. Indra: `scripts/fetch-qa-models.sh <dir> indra` — **a modified OpenRAIL-M licence** (free for research, personal use and smaller organisations; not for products that compete with Datalab's); your app and its users must accept it |
 
